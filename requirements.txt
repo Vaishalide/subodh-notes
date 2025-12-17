@@ -1,0 +1,8 @@
+flask
+flask-cors
+pyrogram
+tgcrypto
+pymongo
+dnspython
+pyromod
+gunicorn
