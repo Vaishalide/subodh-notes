@@ -9,7 +9,6 @@ try:
 except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
-# Added 'send_file' to imports
 from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for, send_file
 from pyrogram import Client, filters, idle
 from pyrogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -22,7 +21,7 @@ API_ID = int(os.environ.get("API_ID", "26233871"))
 API_HASH = os.environ.get("API_HASH", "d1274875c02026a781bbc19d12daa8b6")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8599650881:AAH8ntxRQo6EMoIC0ewl-VsgbeuDFjiDmd0")
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://vabenix546_db_user:JiBKbhvSUF6RziWO@cluster0.hlq6wml.mongodb.net/?appName=Cluster0")
-CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1003601579453"))
+CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1001819373091"))
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASS", "admin123")
 SECRET_KEY = "super_secret_key_change_this"
 
@@ -81,7 +80,6 @@ def download_file(file_id):
     # 1. Get File Info
     file_doc = files_col.find_one({"file_id": file_id})
     filename = file_doc['name'] if file_doc else "document"
-    # Ensure it has a pdf extension if none (adjust as needed)
     if not filename.lower().endswith(('.pdf', '.jpg', '.png', '.doc', '.docx')):
         filename += ".pdf"
 
@@ -91,15 +89,19 @@ def download_file(file_id):
         return await bot.download_media(file_id, in_memory=True)
 
     try:
-        # 3. Execute Thread-Safe Download
+        # 3. Check Connection
         if not bot.is_connected:
-            return "Bot is starting up... please wait 10 seconds.", 503
+            return "Bot is starting up... please wait.", 503
 
-        # Run the async task in the Bot's thread and wait for result in Flask thread
+        # 4. Run Download
+        # This runs the async download in the Bot thread and waits for it here
         future = asyncio.run_coroutine_threadsafe(download_task(), bot.loop)
-        memory_file = future.result() # This blocks until download finishes
+        memory_file = future.result() # Blocks until download is done
         
-        # 4. Send to User
+        # 5. CRITICAL FIX: Reset pointer to start of file
+        memory_file.seek(0)
+        
+        # 6. Send to User
         return send_file(
             memory_file,
             as_attachment=True,
@@ -107,7 +109,7 @@ def download_file(file_id):
             mimetype='application/octet-stream'
         )
     except Exception as e:
-        return f"Download Failed: {str(e)}", 500
+        return f"Download Error: {str(e)}", 500
 
 # --- ADMIN ROUTES ---
 @app.route('/admin', methods=['GET', 'POST'])
@@ -274,7 +276,6 @@ if __name__ == "__main__":
     print("🤖 Starting Bot...")
     bot.start()
     
-    # Refresh Cache on Startup
     try:
         print(f"🔄 Caching Channel ID: {CHANNEL_ID}...")
         bot.loop.run_until_complete(bot.get_chat(CHANNEL_ID))
