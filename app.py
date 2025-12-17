@@ -1,6 +1,7 @@
 import os
 import threading
 import asyncio
+import io
 
 # <--- FORCE FIX FOR PYTHON 3.14 EVENT LOOP --->
 try:
@@ -8,7 +9,8 @@ try:
 except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
-from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for
+# Added 'send_file' to imports
+from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for, send_file
 from pyrogram import Client, filters, idle
 from pyrogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
 from pymongo import MongoClient
@@ -20,7 +22,7 @@ API_ID = int(os.environ.get("API_ID", "26233871"))
 API_HASH = os.environ.get("API_HASH", "d1274875c02026a781bbc19d12daa8b6")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8599650881:AAH8ntxRQo6EMoIC0ewl-VsgbeuDFjiDmd0")
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://vabenix546_db_user:JiBKbhvSUF6RziWO@cluster0.hlq6wml.mongodb.net/?appName=Cluster0")
-CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1001819373091"))
+CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1003601579453"))
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASS", "admin123")
 SECRET_KEY = "super_secret_key_change_this"
 
@@ -73,22 +75,39 @@ def search_files():
         results.append(doc)
     return jsonify(results)
 
+# --- 🚀 FIXED DOWNLOAD ROUTE ---
 @app.route('/download/<file_id>')
 def download_file(file_id):
-    async def stream_generator():
-        try:
-            async for chunk in bot.stream_media(file_id):
-                yield chunk
-        except Exception as e:
-            print(f"Stream Error: {e}")
-
+    # 1. Get File Info
     file_doc = files_col.find_one({"file_id": file_id})
-    filename = file_doc['name'] + ".pdf" if file_doc else "document.pdf"
-    
-    return Response(stream_generator(), headers={
-        "Content-Disposition": f"attachment; filename={filename}",
-        "Content-Type": "application/octet-stream"
-    })
+    filename = file_doc['name'] if file_doc else "document"
+    # Ensure it has a pdf extension if none (adjust as needed)
+    if not filename.lower().endswith(('.pdf', '.jpg', '.png', '.doc', '.docx')):
+        filename += ".pdf"
+
+    # 2. Define Download Helper (Runs on Bot Loop)
+    async def download_task():
+        # Downloads file to RAM (BytesIO object)
+        return await bot.download_media(file_id, in_memory=True)
+
+    try:
+        # 3. Execute Thread-Safe Download
+        if not bot.is_connected:
+            return "Bot is starting up... please wait 10 seconds.", 503
+
+        # Run the async task in the Bot's thread and wait for result in Flask thread
+        future = asyncio.run_coroutine_threadsafe(download_task(), bot.loop)
+        memory_file = future.result() # This blocks until download finishes
+        
+        # 4. Send to User
+        return send_file(
+            memory_file,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/octet-stream'
+        )
+    except Exception as e:
+        return f"Download Failed: {str(e)}", 500
 
 # --- ADMIN ROUTES ---
 @app.route('/admin', methods=['GET', 'POST'])
@@ -212,15 +231,12 @@ async def handle_text(client, message):
     elif step == "ASK_SUB":
         state["data"]["subject"] = text
         
-        # 1. Send "Uploading" message
         status_msg = await message.reply("☁️ Uploading...", reply_markup=ReplyKeyboardRemove())
         
         try:
-            # 2. Copy file to Channel
             original_msg = state["file_msg"]
             saved_msg = await original_msg.copy(CHANNEL_ID)
             
-            # 3. Save to DB
             file_data = {
                 "name": state["data"]["name"],
                 "category": state["data"]["category"],
@@ -232,8 +248,6 @@ async def handle_text(client, message):
             }
             files_col.insert_one(file_data)
             
-            # 4. FIX: Delete "Uploading" and Send NEW Success Message
-            # (Editing fails sometimes, sending new is safer)
             await status_msg.delete() 
             await message.reply(
                 f"✅ **Saved Successfully!**\n\n"
