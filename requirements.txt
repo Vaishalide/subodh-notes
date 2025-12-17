@@ -4,5 +4,6 @@ pyrogram
 tgcrypto
 pymongo
 dnspython
-pyromod
+requests
+beautifulsoup4
 gunicorn
