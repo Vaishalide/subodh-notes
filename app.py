@@ -1,7 +1,7 @@
 import os
 import threading
 import asyncio
-import io
+from queue import Queue # Import Queue for streaming
 
 # <--- FORCE FIX FOR PYTHON 3.14 EVENT LOOP --->
 try:
@@ -9,7 +9,7 @@ try:
 except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
-from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for, send_file
+from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for
 from pyrogram import Client, filters, idle
 from pyrogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
 from pymongo import MongoClient
@@ -74,42 +74,50 @@ def search_files():
         results.append(doc)
     return jsonify(results)
 
-# --- 🚀 FIXED DOWNLOAD ROUTE ---
+# --- 🚀 FAST STREAMING DOWNLOAD ROUTE ---
 @app.route('/download/<file_id>')
 def download_file(file_id):
-    # 1. Get File Info
+    # 1. Get Filename
     file_doc = files_col.find_one({"file_id": file_id})
     filename = file_doc['name'] if file_doc else "document"
     if not filename.lower().endswith(('.pdf', '.jpg', '.png', '.doc', '.docx')):
         filename += ".pdf"
 
-    # 2. Define Download Helper (Runs on Bot Loop)
-    async def download_task():
-        # Downloads file to RAM (BytesIO object)
-        return await bot.download_media(file_id, in_memory=True)
+    # 2. Setup a Queue to bridge Async Bot -> Sync Flask
+    chunk_queue = Queue()
 
-    try:
-        # 3. Check Connection
-        if not bot.is_connected:
-            return "Bot is starting up... please wait.", 503
+    async def producer():
+        """This runs in the Bot Thread. It pushes chunks to the queue."""
+        try:
+            async for chunk in bot.stream_media(file_id):
+                chunk_queue.put(chunk)
+        except Exception as e:
+            print(f"Download Error: {e}")
+        finally:
+            chunk_queue.put(None) # Signal that download is done
 
-        # 4. Run Download
-        # This runs the async download in the Bot thread and waits for it here
-        future = asyncio.run_coroutine_threadsafe(download_task(), bot.loop)
-        memory_file = future.result() # Blocks until download is done
+    def consumer():
+        """This runs in the Flask Thread. It yields chunks to the User."""
+        while True:
+            chunk = chunk_queue.get() # Waits here for data
+            if chunk is None:
+                break
+            yield chunk
+
+    # 3. Start the download in the background
+    if not bot.is_connected:
+        return "Bot is starting... try again in 10s", 503
         
-        # 5. CRITICAL FIX: Reset pointer to start of file
-        memory_file.seek(0)
-        
-        # 6. Send to User
-        return send_file(
-            memory_file,
-            as_attachment=True,
-            download_name=filename,
-            mimetype='application/octet-stream'
-        )
-    except Exception as e:
-        return f"Download Error: {str(e)}", 500
+    asyncio.run_coroutine_threadsafe(producer(), bot.loop)
+
+    # 4. Stream response immediately
+    return Response(
+        consumer(),
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Content-Type": "application/octet-stream"
+        }
+    )
 
 # --- ADMIN ROUTES ---
 @app.route('/admin', methods=['GET', 'POST'])
