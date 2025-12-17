@@ -43,27 +43,36 @@
     <script>
         let globalSubjects = [];
 
-        async def init() {
-            const res = await fetch('/api/public/options');
-            const data = await res.json();
-            
-            fill('sel-cat', data.categories);
-            fill('sel-course', data.courses);
-            fill('sel-sem', data.semesters);
-            globalSubjects = data.subjects;
-            fill('sel-sub', globalSubjects);
-            fetchFiles();
+        // FIXED: Changed 'async def' to 'async function'
+        async function init() {
+            try {
+                const res = await fetch('/api/public/options');
+                const data = await res.json();
+                
+                fill('sel-cat', data.categories);
+                fill('sel-course', data.courses);
+                fill('sel-sem', data.semesters);
+                globalSubjects = data.subjects;
+                fill('sel-sub', globalSubjects);
+                fetchFiles();
+            } catch (e) {
+                console.error("Init Error:", e);
+            }
         }
 
         function fill(id, items) {
             const el = document.getElementById(id);
-            el.innerHTML = el.options[0].outerHTML;
-            items.forEach(i => {
-                const opt = document.createElement('option');
-                opt.value = i.name;
-                opt.text = i.name;
-                el.appendChild(opt);
-            });
+            // Save first option (placeholder)
+            const first = el.options[0].outerHTML;
+            el.innerHTML = first;
+            if (items) {
+                items.forEach(i => {
+                    const opt = document.createElement('option');
+                    opt.value = i.name;
+                    opt.text = i.name;
+                    el.appendChild(opt);
+                });
+            }
         }
 
         function handleCourseChange() {
@@ -84,7 +93,8 @@
             fetchFiles();
         }
 
-        async def fetchFiles() {
+        // FIXED: Changed 'async def' to 'async function'
+        async function fetchFiles() {
             const filters = {
                 category: document.getElementById('sel-cat').value,
                 course: document.getElementById('sel-course').value,
@@ -92,38 +102,42 @@
                 subject: document.getElementById('sel-sub').value
             };
             
-            const res = await fetch('/api/files', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(filters)
-            });
-            const files = await res.json();
-            document.getElementById('count').innerText = files.length + ' files';
-            
-            const grid = document.getElementById('grid');
-            grid.innerHTML = '';
-            
-            if(files.length === 0) {
-                grid.innerHTML = '<div class="col-span-full text-center text-gray-400 py-10">No files found.</div>';
-                return;
-            }
+            try {
+                const res = await fetch('/api/files', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(filters)
+                });
+                const files = await res.json();
+                document.getElementById('count').innerText = files.length + ' files';
+                
+                const grid = document.getElementById('grid');
+                grid.innerHTML = '';
+                
+                if(files.length === 0) {
+                    grid.innerHTML = '<div class="col-span-full text-center text-gray-400 py-10">No files found.</div>';
+                    return;
+                }
 
-            files.forEach(f => {
-                grid.innerHTML += `
-                    <div class="bg-white rounded shadow p-4 border hover:shadow-lg transition">
-                        <div class="flex justify-between">
-                            <h3 class="font-bold text-lg">${f.name}</h3>
-                            <i class="fas fa-file-pdf text-red-500 text-2xl"></i>
+                files.forEach(f => {
+                    grid.innerHTML += `
+                        <div class="bg-white rounded shadow p-4 border hover:shadow-lg transition">
+                            <div class="flex justify-between">
+                                <h3 class="font-bold text-lg">${f.name}</h3>
+                                <i class="fas fa-file-pdf text-red-500 text-2xl"></i>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-2">
+                                <span class="bg-blue-100 text-blue-800 px-2 rounded">${f.category}</span>
+                                <span class="bg-green-100 text-green-800 px-2 rounded">${f.course}</span>
+                            </p>
+                            <p class="text-xs text-gray-400 mt-1">${f.semester} • ${f.subject}</p>
+                            <a href="/download/${f.file_id}" target="_blank" class="block mt-4 text-center bg-brand text-white py-2 rounded font-bold hover:bg-blue-700">Download</a>
                         </div>
-                        <p class="text-xs text-gray-500 mt-2">
-                            <span class="bg-blue-100 text-blue-800 px-2 rounded">${f.category}</span>
-                            <span class="bg-green-100 text-green-800 px-2 rounded">${f.course}</span>
-                        </p>
-                        <p class="text-xs text-gray-400 mt-1">${f.semester} • ${f.subject}</p>
-                        <a href="/download/${f.file_id}" target="_blank" class="block mt-4 text-center bg-brand text-white py-2 rounded font-bold hover:bg-blue-700">Download</a>
-                    </div>
-                `;
-            });
+                    `;
+                });
+            } catch (e) {
+                console.error("Fetch Error:", e);
+            }
         }
         
         document.addEventListener('DOMContentLoaded', init);
