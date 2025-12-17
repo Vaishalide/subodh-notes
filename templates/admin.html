@@ -16,17 +16,26 @@
 
         <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8 border border-gray-700">
             <h2 class="text-xl font-bold mb-4">➕ Add New Option</h2>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                
                 <select id="newType" class="p-2 rounded bg-gray-700 border border-gray-600">
                     <option value="category">Category</option>
                     <option value="course">Course</option>
                     <option value="semester">Semester</option>
                     <option value="subject">Subject</option>
                 </select>
+
                 <input type="text" id="newValue" placeholder="Name (e.g. Maths)" class="p-2 rounded bg-gray-700 border border-gray-600 text-white">
+                
                 <select id="parentCourse" class="p-2 rounded bg-gray-700 border border-gray-600 hidden text-white">
                     <option value="">Select Parent Course</option>
                 </select>
+
+                <select id="parentSem" class="p-2 rounded bg-gray-700 border border-gray-600 hidden text-white">
+                    <option value="">Select Parent Sem</option>
+                </select>
+
                 <button onclick="addOption()" class="bg-green-600 hover:bg-green-700 p-2 rounded font-bold">Add Now</button>
             </div>
         </div>
@@ -53,34 +62,51 @@
 
     <script>
         let allCourses = [];
+        let allSems = [];
 
+        // Toggle dropdowns based on type
         document.getElementById('newType').addEventListener('change', function() {
             const isSub = this.value === 'subject';
-            const pDiv = document.getElementById('parentCourse');
-            pDiv.classList.toggle('hidden', !isSub);
-            if(isSub) updateParentDropdown();
+            const courseDiv = document.getElementById('parentCourse');
+            const semDiv = document.getElementById('parentSem');
+            
+            if(isSub) {
+                courseDiv.classList.remove('hidden');
+                semDiv.classList.remove('hidden');
+                updateDropdowns();
+            } else {
+                courseDiv.classList.add('hidden');
+                semDiv.classList.add('hidden');
+            }
         });
 
-        function updateParentDropdown() {
-            const sel = document.getElementById('parentCourse');
-            sel.innerHTML = '<option value="">Select Parent Course</option>';
-            allCourses.forEach(c => sel.innerHTML += `<option value="${c.name}">${c.name}</option>`);
+        function updateDropdowns() {
+            const cSel = document.getElementById('parentCourse');
+            const sSel = document.getElementById('parentSem');
+            
+            cSel.innerHTML = '<option value="">Select Course</option>';
+            allCourses.forEach(c => cSel.innerHTML += `<option value="${c.name}">${c.name}</option>`);
+
+            sSel.innerHTML = '<option value="">Select Semester</option>';
+            allSems.forEach(s => sSel.innerHTML += `<option value="${s.name}">${s.name}</option>`);
         }
 
-        // FIXED: Changed 'async def' to 'async function'
         async function loadData() {
             try {
                 const res = await fetch('/api/admin/options');
                 const data = await res.json();
                 allCourses = data.courses;
+                allSems = data.semesters;
 
                 render('list-course', data.courses, 'course');
                 render('list-category', data.categories, 'category');
                 render('list-semester', data.semesters, 'semester');
                 render('list-subject', data.subjects, 'subject');
-            } catch (err) {
-                console.error("Error loading data:", err);
-            }
+                
+                // If subject is already selected, refresh dropdowns
+                if(document.getElementById('newType').value === 'subject') updateDropdowns();
+
+            } catch (err) { console.error(err); }
         }
 
         function render(id, items, type) {
@@ -89,7 +115,10 @@
             if (items) {
                 items.forEach(i => {
                     let lbl = i.name;
-                    if(i.parent) lbl += ` <span class='text-xs text-gray-500'>(${i.parent})</span>`;
+                    // Show both parents for subjects
+                    if(i.parent && i.semester) lbl += ` <span class='text-xs text-gray-400'>(${i.parent} - ${i.semester})</span>`;
+                    else if(i.parent) lbl += ` <span class='text-xs text-gray-400'>(${i.parent})</span>`;
+                    
                     el.innerHTML += `
                         <li class="flex justify-between bg-gray-700 p-2 rounded">
                             <span>${lbl}</span>
@@ -99,23 +128,24 @@
             }
         }
 
-        // FIXED: Changed 'async def' to 'async function'
         async function addOption() {
             const type = document.getElementById('newType').value;
             const name = document.getElementById('newValue').value;
             const parent = document.getElementById('parentCourse').value;
+            const semester = document.getElementById('parentSem').value;
+
             if(!name) return alert("Enter Name!");
+            if(type === 'subject' && (!parent || !semester)) return alert("Select Course AND Semester for Subjects!");
 
             await fetch('/api/admin/options', {
                 method: 'POST', 
                 headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({type, name, parent})
+                body: JSON.stringify({type, name, parent, semester})
             });
             document.getElementById('newValue').value = '';
             loadData();
         }
 
-        // FIXED: Changed 'async def' to 'async function'
         async function del(type, name) {
             if(!confirm("Delete?")) return;
             await fetch('/api/admin/options', {
