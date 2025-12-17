@@ -1,5 +1,14 @@
 import os
 import threading
+import asyncio # <--- 1. Import asyncio
+
+# <--- 2. FORCE FIX FOR PYTHON 3.10+ / 3.14 --->
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
+# Now continue with your normal imports
 from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for
 from pyrogram import Client, filters
 from pyromod import listen
