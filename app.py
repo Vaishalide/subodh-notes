@@ -282,20 +282,22 @@ if __name__ == "__main__":
     print("🤖 Starting Bot...")
     bot.start()
     
-    # 3. FORCE CACHE REFRESH (Fix for 'Peer id invalid' on Heroku)
-    # This fetches all chats the bot is in so it learns the Channel ID is valid.
+    # 3. FORCE CACHE REFRESH (Correct Method for Bots)
+    # We use get_chat() to force Pyrogram to find and cache the Channel ID
     try:
-        print("🔄 Refreshing Bot Memory (This fixes the Upload Error)...")
-        # We use the bot's internal loop to run this async task
-        async def refresh_dialogs():
-            async for dialog in bot.get_dialogs():
-                pass # Just fetching them caches the IDs
+        print(f"🔄 Caching Channel ID: {CHANNEL_ID}...")
         
-        bot.loop.run_until_complete(refresh_dialogs())
-        print("✅ Memory Refreshed! Channel ID cached.")
+        async def cache_channel():
+            try:
+                chat = await bot.get_chat(CHANNEL_ID)
+                print(f"✅ Successfully Cached Channel: {chat.title}")
+            except Exception as e:
+                print(f"❌ Failed to cache channel. Make sure Bot is Admin! Error: {e}")
+
+        bot.loop.run_until_complete(cache_channel())
+        
     except Exception as e:
-        print(f"⚠️ Warning: Could not refresh dialogs: {e}")
-        print("Make sure the Bot is an Admin in the Channel!")
+        print(f"⚠️ Warning: Startup cache failed: {e}")
 
     print("🚀 System Online! Bot is listening...")
     
