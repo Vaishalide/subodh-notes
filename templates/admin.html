@@ -18,7 +18,6 @@
             <h2 class="text-xl font-bold mb-4">➕ Add New Option</h2>
             
             <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-                
                 <select id="newType" class="p-2 rounded bg-gray-700 border border-gray-600">
                     <option value="category">Category</option>
                     <option value="course">Course</option>
@@ -40,7 +39,7 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div class="bg-gray-800 p-4 rounded-lg">
                 <h3 class="text-lg font-bold text-yellow-400 border-b border-gray-600 pb-2">🎓 Courses</h3>
                 <ul id="list-course" class="mt-4 space-y-2"></ul>
@@ -56,6 +55,24 @@
             <div class="bg-gray-800 p-4 rounded-lg">
                 <h3 class="text-lg font-bold text-purple-400 border-b border-gray-600 pb-2">📚 Subjects</h3>
                 <ul id="list-subject" class="mt-4 space-y-2"></ul>
+            </div>
+        </div>
+
+        <div class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
+            <h2 class="text-xl font-bold mb-4 text-red-400">🗑 Manage Recent Files</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-gray-300">
+                    <thead>
+                        <tr class="border-b border-gray-600">
+                            <th class="p-2">Name</th>
+                            <th class="p-2">Course</th>
+                            <th class="p-2">Subject</th>
+                            <th class="p-2">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="file-list">
+                        </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -103,9 +120,38 @@
                 render('list-semester', data.semesters, 'semester');
                 render('list-subject', data.subjects, 'subject');
                 
-                // If subject is already selected, refresh dropdowns
                 if(document.getElementById('newType').value === 'subject') updateDropdowns();
 
+            } catch (err) { console.error(err); }
+        }
+
+        // NEW: Load Files Function
+        async function loadFiles() {
+            try {
+                const res = await fetch('/api/admin/files');
+                const files = await res.json();
+                const list = document.getElementById('file-list');
+                list.innerHTML = '';
+                
+                if (files.length === 0) {
+                    list.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-500">No files found.</td></tr>';
+                    return;
+                }
+
+                files.forEach(f => {
+                    list.innerHTML += `
+                        <tr class="border-b border-gray-700 hover:bg-gray-700 transition">
+                            <td class="p-2">${f.name}</td>
+                            <td class="p-2 text-sm text-gray-400">${f.course}</td>
+                            <td class="p-2 text-sm text-gray-400">${f.subject}</td>
+                            <td class="p-2">
+                                <button onclick="deleteFile('${f.file_id}')" class="text-red-500 hover:text-red-300 transition">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
             } catch (err) { console.error(err); }
         }
 
@@ -115,7 +161,6 @@
             if (items) {
                 items.forEach(i => {
                     let lbl = i.name;
-                    // Show both parents for subjects
                     if(i.parent && i.semester) lbl += ` <span class='text-xs text-gray-400'>(${i.parent} - ${i.semester})</span>`;
                     else if(i.parent) lbl += ` <span class='text-xs text-gray-400'>(${i.parent})</span>`;
                     
@@ -156,7 +201,19 @@
             loadData();
         }
 
+        // NEW: Delete File Function
+        async function deleteFile(fileId) {
+            if(!confirm("Permanently delete this file from the database?")) return;
+            await fetch('/api/admin/files', {
+                method: 'DELETE', 
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({file_id: fileId})
+            });
+            loadFiles(); // Refresh file list
+        }
+
         loadData();
+        loadFiles(); // Call this to load files on page start
     </script>
 </body>
 </html>
