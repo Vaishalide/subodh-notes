@@ -1,7 +1,7 @@
 import os
 import threading
 import asyncio
-from queue import Queue # Import Queue for streaming
+from queue import Queue 
 
 # <--- FORCE FIX FOR PYTHON 3.14 EVENT LOOP --->
 try:
@@ -9,7 +9,7 @@ try:
 except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
-from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for
+from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for, send_file
 from pyrogram import Client, filters, idle
 from pyrogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
 from pymongo import MongoClient
@@ -77,40 +77,34 @@ def search_files():
 # --- 🚀 FAST STREAMING DOWNLOAD ROUTE ---
 @app.route('/download/<file_id>')
 def download_file(file_id):
-    # 1. Get Filename
     file_doc = files_col.find_one({"file_id": file_id})
     filename = file_doc['name'] if file_doc else "document"
     if not filename.lower().endswith(('.pdf', '.jpg', '.png', '.doc', '.docx')):
         filename += ".pdf"
 
-    # 2. Setup a Queue to bridge Async Bot -> Sync Flask
     chunk_queue = Queue()
 
     async def producer():
-        """This runs in the Bot Thread. It pushes chunks to the queue."""
         try:
             async for chunk in bot.stream_media(file_id):
                 chunk_queue.put(chunk)
         except Exception as e:
             print(f"Download Error: {e}")
         finally:
-            chunk_queue.put(None) # Signal that download is done
+            chunk_queue.put(None)
 
     def consumer():
-        """This runs in the Flask Thread. It yields chunks to the User."""
         while True:
-            chunk = chunk_queue.get() # Waits here for data
+            chunk = chunk_queue.get()
             if chunk is None:
                 break
             yield chunk
 
-    # 3. Start the download in the background
     if not bot.is_connected:
         return "Bot is starting... try again in 10s", 503
         
     asyncio.run_coroutine_threadsafe(producer(), bot.loop)
 
-    # 4. Stream response immediately
     return Response(
         consumer(),
         headers={
@@ -162,6 +156,25 @@ def manage_options():
     if request.method == 'DELETE':
         data = request.json
         options_col.delete_one({"type": data['type'], "name": data['name']})
+        return jsonify({"status": "deleted"})
+
+# NEW: API to List and Delete Files
+@app.route('/api/admin/files', methods=['GET', 'DELETE'])
+def manage_files():
+    if not session.get('logged_in'): return jsonify({"error": "Unauthorized"}), 401
+
+    if request.method == 'GET':
+        # Return the last 50 files (newest first)
+        files = []
+        for doc in files_col.find().sort('_id', -1).limit(50):
+            doc['_id'] = str(doc['_id'])
+            files.append(doc)
+        return jsonify(files)
+
+    if request.method == 'DELETE':
+        data = request.json
+        file_id = data.get('file_id')
+        files_col.delete_one({"file_id": file_id})
         return jsonify({"status": "deleted"})
 
 # ===========================
