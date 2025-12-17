@@ -275,8 +275,30 @@ def run_flask():
     app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
+    # 1. Start Flask in Background
     threading.Thread(target=run_flask, daemon=True).start()
+    
+    # 2. Start Bot
+    print("🤖 Starting Bot...")
     bot.start()
-    print("🚀 Bot Started with Custom State Machine!")
+    
+    # 3. FORCE CACHE REFRESH (Fix for 'Peer id invalid' on Heroku)
+    # This fetches all chats the bot is in so it learns the Channel ID is valid.
+    try:
+        print("🔄 Refreshing Bot Memory (This fixes the Upload Error)...")
+        # We use the bot's internal loop to run this async task
+        async def refresh_dialogs():
+            async for dialog in bot.get_dialogs():
+                pass # Just fetching them caches the IDs
+        
+        bot.loop.run_until_complete(refresh_dialogs())
+        print("✅ Memory Refreshed! Channel ID cached.")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not refresh dialogs: {e}")
+        print("Make sure the Bot is an Admin in the Channel!")
+
+    print("🚀 System Online! Bot is listening...")
+    
+    # 4. Keep Running
     idle()
     bot.stop()
