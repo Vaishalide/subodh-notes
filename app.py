@@ -1,6 +1,9 @@
 import os
 import threading
 import asyncio
+import io
+import requests
+from bs4 import BeautifulSoup
 from queue import Queue 
 
 # <--- FORCE FIX FOR PYTHON 3.14 EVENT LOOP --->
@@ -73,6 +76,56 @@ def search_files():
         doc['_id'] = str(doc['_id'])
         results.append(doc)
     return jsonify(results)
+
+# --- 🆕 NOTICE BOARD SCRAPER ---
+@app.route('/api/notices', methods=['GET'])
+def get_notices():
+    try:
+        url = "https://www.subodhpgcollege.com/notice_board"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        notices = []
+        # Find all notice items based on the HTML structure provided
+        items = soup.find_all('li', class_='comment_info')
+        
+        for item in items:
+            # Extract Text
+            content_div = item.find('div', class_='comment_content')
+            text_p = content_div.find('p')
+            title = text_p.get_text(strip=True) if text_p else "No Title"
+            
+            # Extract Date & Link
+            meta = content_div.find('div', class_='meta_data')
+            date_text = "Unknown Date"
+            links = []
+            
+            if meta:
+                h6 = meta.find('h6')
+                if h6:
+                    full_meta = h6.get_text(strip=True)
+                    if "Posted On :" in full_meta:
+                        date_text = full_meta.split("Posted On :")[-1].strip()
+                    
+                    # Find download links
+                    for a in h6.find_all('a'):
+                        link_url = a['href']
+                        # Fix relative URLs
+                        if not link_url.startswith('http'):
+                            link_url = "https://www.subodhpgcollege.com/" + link_url
+                        links.append({'text': a.get_text(strip=True), 'url': link_url})
+
+            notices.append({
+                'title': title,
+                'date': date_text,
+                'links': links
+            })
+            
+        return jsonify(notices)
+    except Exception as e:
+        print(f"Scraping Error: {e}")
+        return jsonify([])
 
 # --- 🚀 FAST STREAMING DOWNLOAD ROUTE ---
 @app.route('/download/<file_id>')
@@ -158,13 +211,11 @@ def manage_options():
         options_col.delete_one({"type": data['type'], "name": data['name']})
         return jsonify({"status": "deleted"})
 
-# NEW: API to List and Delete Files
 @app.route('/api/admin/files', methods=['GET', 'DELETE'])
 def manage_files():
     if not session.get('logged_in'): return jsonify({"error": "Unauthorized"}), 401
 
     if request.method == 'GET':
-        # Return the last 50 files (newest first)
         files = []
         for doc in files_col.find().sort('_id', -1).limit(50):
             doc['_id'] = str(doc['_id'])
