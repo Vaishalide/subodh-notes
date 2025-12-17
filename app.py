@@ -31,14 +31,11 @@ mongo = MongoClient(MONGO_URL)
 db = mongo['college_portal']
 files_col = db['files']
 options_col = db['options']
-# Subject Schema: { "type": "subject", "name": "Maths", "parent": "B.Tech", "semester": "Sem 1" }
 
 # ===========================
 # 🤖 BOT STATE MANAGEMENT
 # ===========================
 bot = Client("server_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-# Dictionary to store user progress: { user_id: { "step": 1, "file_msg": msg_obj, "data": {...} } }
 user_states = {}
 
 # ===========================
@@ -124,7 +121,6 @@ def manage_options():
 
     if request.method == 'POST':
         data = request.json
-        # Check duplicates
         query = {"type": data['type'], "name": data['name']}
         if data['type'] == 'subject':
             query['parent'] = data.get('parent')
@@ -140,11 +136,10 @@ def manage_options():
         return jsonify({"status": "deleted"})
 
 # ===========================
-# 🤖 BOT LOGIC (State Machine)
+# 🤖 BOT LOGIC
 # ===========================
 
 async def get_keyboard(option_type, parent=None, semester=None):
-    """Fetch options and return Keyboard"""
     query = {"type": option_type}
     if parent: query["parent"] = parent
     if semester: query["semester"] = semester
@@ -152,7 +147,6 @@ async def get_keyboard(option_type, parent=None, semester=None):
     options = list(options_col.find(query))
     if not options: return None
 
-    # Arrange buttons in rows of 2
     buttons = []
     row = []
     for doc in options:
@@ -164,11 +158,9 @@ async def get_keyboard(option_type, parent=None, semester=None):
     
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=True)
 
-# 1. START UPLOAD
 @bot.on_message(filters.document & filters.private)
 async def start_upload(client, message):
     user_id = message.from_user.id
-    # Initialize State
     user_states[user_id] = {
         "step": "ASK_NAME",
         "file_msg": message,
@@ -176,95 +168,83 @@ async def start_upload(client, message):
     }
     await message.reply("📝 **Enter a Name for this file:**", reply_markup=ReplyKeyboardRemove())
 
-# 2. HANDLE TEXT RESPONSES (The Loop)
 @bot.on_message(filters.text & filters.private)
 async def handle_text(client, message):
     user_id = message.from_user.id
-    if user_id not in user_states:
-        return # Ignore random chats
+    if user_id not in user_states: return
     
     state = user_states[user_id]
     step = state["step"]
     text = message.text
 
-    # --- STEP 1: GOT NAME -> ASK CATEGORY ---
     if step == "ASK_NAME":
         state["data"]["name"] = text
         kb = await get_keyboard("category")
         if not kb: return await message.reply("❌ No Categories found! Add in Admin Panel.")
-        
         state["step"] = "ASK_CAT"
         await message.reply("📂 **Select Category:**", reply_markup=kb)
 
-    # --- STEP 2: GOT CATEGORY -> ASK COURSE ---
     elif step == "ASK_CAT":
         state["data"]["category"] = text
         kb = await get_keyboard("course")
         if not kb: return await message.reply("❌ No Courses found!")
-        
         state["step"] = "ASK_COURSE"
         await message.reply("🎓 **Select Course:**", reply_markup=kb)
 
-    # --- STEP 3: GOT COURSE -> ASK SEMESTER ---
     elif step == "ASK_COURSE":
         state["data"]["course"] = text
         kb = await get_keyboard("semester")
         if not kb: return await message.reply("❌ No Semesters found!")
-        
         state["step"] = "ASK_SEM"
         await message.reply("⏳ **Select Semester:**", reply_markup=kb)
 
-    # --- STEP 4: GOT SEMESTER -> ASK SUBJECT ---
     elif step == "ASK_SEM":
         state["data"]["semester"] = text
         course = state["data"]["course"]
-        
-        # Filter subjects by BOTH Course AND Semester
         kb = await get_keyboard("subject", parent=course, semester=text)
-        
-        # Fallback: If no strict match, show all subjects for that course
-        if not kb:
-            kb = await get_keyboard("subject", parent=course)
-        
-        # Fallback: Show all global subjects
-        if not kb:
-            kb = await get_keyboard("subject")
+        if not kb: kb = await get_keyboard("subject", parent=course)
+        if not kb: kb = await get_keyboard("subject")
 
         if not kb: return await message.reply("❌ No Subjects found for this combination!")
-
         state["step"] = "ASK_SUB"
         await message.reply("📚 **Select Subject:**", reply_markup=kb)
 
-    # --- STEP 5: GOT SUBJECT -> SAVE ---
     elif step == "ASK_SUB":
         state["data"]["subject"] = text
         
-        # Save process
+        # 1. Send "Uploading" message
         status_msg = await message.reply("☁️ Uploading...", reply_markup=ReplyKeyboardRemove())
         
-        original_msg = state["file_msg"]
-        saved_msg = await original_msg.copy(CHANNEL_ID)
+        try:
+            # 2. Copy file to Channel
+            original_msg = state["file_msg"]
+            saved_msg = await original_msg.copy(CHANNEL_ID)
+            
+            # 3. Save to DB
+            file_data = {
+                "name": state["data"]["name"],
+                "category": state["data"]["category"],
+                "course": state["data"]["course"],
+                "semester": state["data"]["semester"],
+                "subject": state["data"]["subject"],
+                "file_id": saved_msg.document.file_id,
+                "msg_link": saved_msg.link
+            }
+            files_col.insert_one(file_data)
+            
+            # 4. FIX: Delete "Uploading" and Send NEW Success Message
+            # (Editing fails sometimes, sending new is safer)
+            await status_msg.delete() 
+            await message.reply(
+                f"✅ **Saved Successfully!**\n\n"
+                f"📄 {file_data['name']}\n"
+                f"🎓 {file_data['course']} > {file_data['semester']}\n"
+                f"📚 {file_data['subject']}"
+            )
+            
+        except Exception as e:
+            await message.reply(f"❌ Error: {e}")
         
-        file_data = {
-            "name": state["data"]["name"],
-            "category": state["data"]["category"],
-            "course": state["data"]["course"],
-            "semester": state["data"]["semester"],
-            "subject": state["data"]["subject"],
-            "file_id": saved_msg.document.file_id,
-            "msg_link": saved_msg.link
-        }
-        
-        files_col.insert_one(file_data)
-        
-        await status_msg.edit_text(
-            f"✅ **Saved Successfully!**\n\n"
-            f"📄 {file_data['name']}\n"
-            f"🎓 {file_data['course']} > {file_data['semester']}\n"
-            f"📚 {file_data['subject']}"
-        )
-        
-        # Clear state
         del user_states[user_id]
 
 # ===========================
@@ -275,32 +255,19 @@ def run_flask():
     app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
-    # 1. Start Flask in Background
     threading.Thread(target=run_flask, daemon=True).start()
     
-    # 2. Start Bot
     print("🤖 Starting Bot...")
     bot.start()
     
-    # 3. FORCE CACHE REFRESH (Correct Method for Bots)
-    # We use get_chat() to force Pyrogram to find and cache the Channel ID
+    # Refresh Cache on Startup
     try:
         print(f"🔄 Caching Channel ID: {CHANNEL_ID}...")
-        
-        async def cache_channel():
-            try:
-                chat = await bot.get_chat(CHANNEL_ID)
-                print(f"✅ Successfully Cached Channel: {chat.title}")
-            except Exception as e:
-                print(f"❌ Failed to cache channel. Make sure Bot is Admin! Error: {e}")
-
-        bot.loop.run_until_complete(cache_channel())
-        
+        bot.loop.run_until_complete(bot.get_chat(CHANNEL_ID))
+        print("✅ Channel Cached Successfully!")
     except Exception as e:
-        print(f"⚠️ Warning: Startup cache failed: {e}")
+        print(f"⚠️ Cache Warning (Check if Bot is Admin): {e}")
 
     print("🚀 System Online! Bot is listening...")
-    
-    # 4. Keep Running
     idle()
     bot.stop()
