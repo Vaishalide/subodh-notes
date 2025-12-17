@@ -217,7 +217,9 @@ async def upload_handler(client, message):
 # 4. RUNNER
 # ---------------------------------------------------------
 def run_flask():
-    app.run(host="0.0.0.0", port=8000)
+    # Get the PORT from Heroku environment, default to 8080 if not found
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
