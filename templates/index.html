@@ -26,8 +26,8 @@
         <h1 class="text-3xl font-bold text-center mb-6">Study Material Library</h1>
         <div class="max-w-6xl mx-auto bg-white rounded-lg shadow-lg p-4 grid grid-cols-1 md:grid-cols-4 gap-4 text-gray-800">
             <select id="sel-cat" onchange="fetchFiles()" class="p-2 border rounded"><option value="">All Categories</option></select>
-            <select id="sel-course" onchange="handleCourseChange()" class="p-2 border rounded"><option value="">All Courses</option></select>
-            <select id="sel-sem" onchange="fetchFiles()" class="p-2 border rounded"><option value="">All Semesters</option></select>
+            <select id="sel-course" onchange="filterSubjects()" class="p-2 border rounded"><option value="">All Courses</option></select>
+            <select id="sel-sem" onchange="filterSubjects()" class="p-2 border rounded"><option value="">All Semesters</option></select>
             <select id="sel-sub" onchange="fetchFiles()" class="p-2 border rounded"><option value="">All Subjects</option></select>
         </div>
     </div>
@@ -43,7 +43,6 @@
     <script>
         let globalSubjects = [];
 
-        // FIXED: Changed 'async def' to 'async function'
         async function init() {
             try {
                 const res = await fetch('/api/public/options');
@@ -55,14 +54,11 @@
                 globalSubjects = data.subjects;
                 fill('sel-sub', globalSubjects);
                 fetchFiles();
-            } catch (e) {
-                console.error("Init Error:", e);
-            }
+            } catch (e) { console.error(e); }
         }
 
         function fill(id, items) {
             const el = document.getElementById(id);
-            // Save first option (placeholder)
             const first = el.options[0].outerHTML;
             el.innerHTML = first;
             if (items) {
@@ -75,14 +71,24 @@
             }
         }
 
-        function handleCourseChange() {
+        // FILTER LOGIC: Course AND Semester
+        function filterSubjects() {
             const course = document.getElementById('sel-course').value;
+            const sem = document.getElementById('sel-sem').value;
             const subSelect = document.getElementById('sel-sub');
+            
             subSelect.innerHTML = '<option value="">All Subjects</option>';
             
-            const filtered = course 
-                ? globalSubjects.filter(s => s.parent === course || !s.parent)
-                : globalSubjects;
+            const filtered = globalSubjects.filter(s => {
+                // If subject has parent & semester defined, match BOTH
+                if (s.parent && s.semester) {
+                    return (course === "" || s.parent === course) && 
+                           (sem === "" || s.semester === sem);
+                }
+                // Fallback for old data or global subjects
+                if (s.parent) return (course === "" || s.parent === course);
+                return true;
+            });
                 
             filtered.forEach(s => {
                 const opt = document.createElement('option');
@@ -93,7 +99,6 @@
             fetchFiles();
         }
 
-        // FIXED: Changed 'async def' to 'async function'
         async function fetchFiles() {
             const filters = {
                 category: document.getElementById('sel-cat').value,
@@ -135,9 +140,7 @@
                         </div>
                     `;
                 });
-            } catch (e) {
-                console.error("Fetch Error:", e);
-            }
+            } catch (e) { console.error(e); }
         }
         
         document.addEventListener('DOMContentLoaded', init);
