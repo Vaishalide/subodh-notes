@@ -67,32 +67,40 @@
             allCourses.forEach(c => sel.innerHTML += `<option value="${c.name}">${c.name}</option>`);
         }
 
-        async def loadData() {
-            const res = await fetch('/api/admin/options');
-            const data = await res.json();
-            allCourses = data.courses;
+        // FIXED: Changed 'async def' to 'async function'
+        async function loadData() {
+            try {
+                const res = await fetch('/api/admin/options');
+                const data = await res.json();
+                allCourses = data.courses;
 
-            render('list-course', data.courses, 'course');
-            render('list-category', data.categories, 'category');
-            render('list-semester', data.semesters, 'semester');
-            render('list-subject', data.subjects, 'subject');
+                render('list-course', data.courses, 'course');
+                render('list-category', data.categories, 'category');
+                render('list-semester', data.semesters, 'semester');
+                render('list-subject', data.subjects, 'subject');
+            } catch (err) {
+                console.error("Error loading data:", err);
+            }
         }
 
         function render(id, items, type) {
             const el = document.getElementById(id);
             el.innerHTML = '';
-            items.forEach(i => {
-                let lbl = i.name;
-                if(i.parent) lbl += ` <span class='text-xs text-gray-500'>(${i.parent})</span>`;
-                el.innerHTML += `
-                    <li class="flex justify-between bg-gray-700 p-2 rounded">
-                        <span>${lbl}</span>
-                        <button onclick="del('${type}', '${i.name}')" class="text-red-400"><i class="fas fa-trash"></i></button>
-                    </li>`;
-            });
+            if (items) {
+                items.forEach(i => {
+                    let lbl = i.name;
+                    if(i.parent) lbl += ` <span class='text-xs text-gray-500'>(${i.parent})</span>`;
+                    el.innerHTML += `
+                        <li class="flex justify-between bg-gray-700 p-2 rounded">
+                            <span>${lbl}</span>
+                            <button onclick="del('${type}', '${i.name}')" class="text-red-400"><i class="fas fa-trash"></i></button>
+                        </li>`;
+                });
+            }
         }
 
-        async def addOption() {
+        // FIXED: Changed 'async def' to 'async function'
+        async function addOption() {
             const type = document.getElementById('newType').value;
             const name = document.getElementById('newValue').value;
             const parent = document.getElementById('parentCourse').value;
@@ -107,7 +115,8 @@
             loadData();
         }
 
-        async def del(type, name) {
+        // FIXED: Changed 'async def' to 'async function'
+        async function del(type, name) {
             if(!confirm("Delete?")) return;
             await fetch('/api/admin/options', {
                 method: 'DELETE', 
