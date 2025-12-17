@@ -9,8 +9,8 @@ from pymongo import MongoClient
 # ⚙️ CONFIGURATION
 # ===========================
 # Replace these with your actual details or use Environment Variables
-API_ID = int(os.environ.get("API_ID", "12345678"))
-API_HASH = os.environ.get("API_HASH", "your_api_hash_here")
+API_ID = int(os.environ.get("API_ID", "26233871"))
+API_HASH = os.environ.get("API_HASH", "d1274875c02026a781bbc19d12daa8b6")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8599650881:AAH8ntxRQo6EMoIC0ewl-VsgbeuDFjiDmd0")
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://vabenix546_db_user:JiBKbhvSUF6RziWO@cluster0.hlq6wml.mongodb.net/?appName=Cluster0")
 CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1003601579453")) # Your Private Storage Channel
