@@ -10,7 +10,7 @@ except RuntimeError:
 
 # Now continue with your normal imports
 from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyromod import listen
 from pymongo import MongoClient
 
@@ -222,8 +222,16 @@ def run_flask():
     app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
+    # Start Flask in a separate background thread (daemon=True means it closes when bot closes)
+    threading.Thread(target=run_flask, daemon=True).start()
+    
+    # Start the Bot
     bot.start()
-    print("🚀 System Online!")
-    import time
-    while True: time.sleep(10)
+    print("🚀 System Online! Bot is listening...")
+    
+    # idle() keeps the program running AND listening for messages
+    # (Unlike time.sleep, which freezes the program)
+    idle()
+    
+    # Stop correctly when Ctrl+C is pressed
+    bot.stop()
