@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-white font-sans p-6">
+
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-8 text-blue-400">⚙️ Admin Dashboard</h1>
+
+        <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
+            <h2 class="text-xl font-bold mb-4">➕ Add New Option</h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                
+                <select id="newType" class="p-2 rounded bg-gray-700 border border-gray-600">
+                    <option value="category">Category (e.g. Notes)</option>
+                    <option value="course">Course (e.g. B.Tech)</option>
+                    <option value="semester">Semester (e.g. Sem 1)</option>
+                    <option value="subject">Subject</option>
+                </select>
+
+                <input type="text" id="newValue" placeholder="Name (e.g. Java)" class="p-2 rounded bg-gray-700 border border-gray-600">
+                
+                <select id="parentCourse" class="p-2 rounded bg-gray-700 border border-gray-600 hidden">
+                    <option value="">Select Parent Course</option>
+                    </select>
+
+                <button onclick="addOption()" class="bg-green-500 hover:bg-green-600 p-2 rounded font-bold">Add</button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <h3 class="text-lg font-bold text-yellow-400 border-b border-gray-600 pb-2">🎓 Courses</h3>
+                <ul id="list-course" class="mt-4 space-y-2"></ul>
+            </div>
+
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <h3 class="text-lg font-bold text-purple-400 border-b border-gray-600 pb-2">📚 Subjects</h3>
+                <ul id="list-subject" class="mt-4 space-y-2"></ul>
+            </div>
+
+             <div class="bg-gray-800 p-4 rounded-lg">
+                <h3 class="text-lg font-bold text-pink-400 border-b border-gray-600 pb-2">⏳ Semesters</h3>
+                <ul id="list-semester" class="mt-4 space-y-2"></ul>
+            </div>
+
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <h3 class="text-lg font-bold text-green-400 border-b border-gray-600 pb-2">📂 Categories</h3>
+                <ul id="list-category" class="mt-4 space-y-2"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. Show/Hide Parent Dropdown based on Type
+        document.getElementById('newType').addEventListener('change', function() {
+            const isSubject = this.value === 'subject';
+            const parentDropdown = document.getElementById('parentCourse');
+            if(isSubject) {
+                parentDropdown.classList.remove('hidden');
+                loadCoursesIntoDropdown();
+            } else {
+                parentDropdown.classList.add('hidden');
+            }
+        });
+
+        // 2. Fetch Data
+        async function loadData() {
+            const res = await fetch('/api/admin/options');
+            const data = await res.json();
+            
+            renderList('list-course', data.courses, 'course');
+            renderList('list-subject', data.subjects, 'subject');
+            renderList('list-semester', data.semesters, 'semester');
+            renderList('list-category', data.categories, 'category');
+
+            // Store for dropdown usage
+            window.allCourses = data.courses; 
+        }
+
+        function renderList(elementId, items, type) {
+            const list = document.getElementById(elementId);
+            list.innerHTML = '';
+            items.forEach(item => {
+                let label = item.name;
+                if(item.parent) label += ` <span class="text-xs text-gray-400">(${item.parent})</span>`;
+                
+                list.innerHTML += `
+                    <li class="flex justify-between items-center bg-gray-700 p-2 rounded">
+                        <span>${label}</span>
+                        <button onclick="deleteOption('${type}', '${item.name}')" class="text-red-400 hover:text-red-200">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </li>
+                `;
+            });
+        }
+
+        function loadCoursesIntoDropdown() {
+            const sel = document.getElementById('parentCourse');
+            sel.innerHTML = '<option value="">Select Parent Course</option>';
+            if(window.allCourses) {
+                window.allCourses.forEach(c => {
+                    sel.innerHTML += `<option value="${c.name}">${c.name}</option>`;
+                });
+            }
+        }
+
+        // 3. Add Data
+        async function addOption() {
+            const type = document.getElementById('newType').value;
+            const name = document.getElementById('newValue').value;
+            const parent = document.getElementById('parentCourse').value;
+
+            if(!name) return alert("Enter a name!");
+
+            await fetch('/api/admin/options', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ type, name, parent })
+            });
+            document.getElementById('newValue').value = '';
+            loadData();
+        }
+
+        // 4. Delete Data
+        async function deleteOption(type, name) {
+            if(!confirm("Delete " + name + "?")) return;
+            await fetch('/api/admin/options', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ type, name })
+            });
+            loadData();
+        }
+
+        loadData();
+    </script>
+</body>
+</html>
