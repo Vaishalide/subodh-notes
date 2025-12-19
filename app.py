@@ -80,7 +80,7 @@ def search_files():
         results.append(doc)
     return jsonify(results)
 
-# --- NEW: SYLLABUS SCRAPER ---
+# --- SYLLABUS SCRAPER ---
 @app.route('/api/syllabus', methods=['GET'])
 def get_syllabus():
     s_type = request.args.get('type', 'UG')
@@ -92,10 +92,8 @@ def get_syllabus():
         soup = BeautifulSoup(response.content, 'html.parser')
         
         syllabus_list = []
-        # Find the main table
         table = soup.find('table', class_='table')
-        if not table:
-            return jsonify([])
+        if not table: return jsonify([])
 
         rows = table.find_all('tr')
         current_section = "General"
@@ -104,14 +102,11 @@ def get_syllabus():
             cols = row.find_all('td')
             if not cols: continue
 
-            # Check if it's a section header (usually has colspan or specific styling)
             if len(cols) == 1 or (len(cols) > 0 and cols[0].get('colspan')):
                 text = cols[0].get_text(strip=True)
                 if text: current_section = text
                 continue
             
-            # Normal row: [Empty/Category, Name, Download]
-            # Usually the 2nd column has the name and 3rd has the link
             if len(cols) >= 3:
                 name = cols[1].get_text(strip=True)
                 link_tag = cols[2].find('a')
@@ -121,16 +116,57 @@ def get_syllabus():
                     if not link.startswith('http'):
                         link = "https://www.subodhpgcollege.com/" + link
                     
-                    syllabus_list.append({
-                        'section': current_section,
-                        'name': name,
-                        'link': link
-                    })
+                    syllabus_list.append({'section': current_section, 'name': name, 'link': link})
         
         return jsonify(syllabus_list)
-
     except Exception as e:
         print(f"Syllabus Error: {e}")
+        return jsonify([])
+
+# --- NEW: ASSIGNMENTS SCRAPER ---
+@app.route('/api/assignments', methods=['GET'])
+def get_assignments():
+    try:
+        url = "https://www.subodhpgcollege.com/assignments"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        assignments = []
+        
+        # The page structure groups tables under headings
+        # We find all headings first
+        headings = soup.find_all('div', class_='heading_s1')
+        
+        for heading_div in headings:
+            h4 = heading_div.find('h4')
+            section_title = h4.get_text(strip=True) if h4 else "General Assignments"
+            
+            # The table is in the next sibling div with class 'table-responsive'
+            # We iterate siblings until we find the table wrapper
+            sibling = heading_div.find_next_sibling('div', class_='table-responsive')
+            if sibling:
+                rows = sibling.find_all('tr')
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) >= 2:
+                        name = cols[0].get_text(strip=True)
+                        link_tag = cols[1].find('a')
+                        
+                        if name and link_tag and link_tag.get('href'):
+                            link = link_tag['href']
+                            if not link.startswith('http'):
+                                link = "https://www.subodhpgcollege.com/" + link
+                            
+                            assignments.append({
+                                'section': section_title,
+                                'name': name,
+                                'link': link
+                            })
+                            
+        return jsonify(assignments)
+    except Exception as e:
+        print(f"Assignment Error: {e}")
         return jsonify([])
 
 # --- NOTICE BOARD SCRAPER ---
@@ -167,11 +203,7 @@ def get_notices():
                             link_url = "https://www.subodhpgcollege.com/" + link_url
                         links.append({'text': a.get_text(strip=True), 'url': link_url})
 
-            notices.append({
-                'title': title,
-                'date': date_text,
-                'links': links
-            })
+            notices.append({'title': title, 'date': date_text, 'links': links})
             
         return jsonify(notices)
     except Exception as e:
