@@ -3,6 +3,7 @@ import threading
 import asyncio
 import io
 import requests
+import re  # <--- NEW IMPORT
 from bs4 import BeautifulSoup
 from queue import Queue 
 
@@ -63,13 +64,19 @@ def get_public_options():
     }
     return jsonify(data)
 
+# --- 🔍 FIXED SEARCH API (Case Insensitive) ---
 @app.route('/api/files', methods=['POST'])
 def search_files():
     filters = request.json
     query = {}
+    
     for key, value in filters.items():
         if value and value != "":
-            query[key] = value
+            # FIX: Use Regex for Case-Insensitive Matching
+            # This makes "Physics" match "physics" match "PHYSICS"
+            # It also handles accidental spaces
+            safe_val = re.escape(value.strip())
+            query[key] = {"$regex": f"^{safe_val}$", "$options": "i"}
             
     results = []
     for doc in files_col.find(query):
@@ -77,7 +84,7 @@ def search_files():
         results.append(doc)
     return jsonify(results)
 
-# --- 🆕 NOTICE BOARD SCRAPER ---
+# --- NEW NOTICE BOARD SCRAPER ---
 @app.route('/api/notices', methods=['GET'])
 def get_notices():
     try:
@@ -122,7 +129,7 @@ def get_notices():
         print(f"Scraping Error: {e}")
         return jsonify([])
 
-# --- 🚀 FAST STREAMING DOWNLOAD ROUTE ---
+# --- FAST STREAMING DOWNLOAD ROUTE ---
 @app.route('/download/<file_id>')
 def download_file(file_id):
     file_doc = files_col.find_one({"file_id": file_id})
@@ -192,8 +199,7 @@ def manage_options():
 
     if request.method == 'POST':
         data = request.json
-        # CLEAN DATA: Strip whitespace
-        data['name'] = data['name'].strip()
+        data['name'] = data['name'].strip() # Clean Input
         
         query = {"type": data['type'], "name": data['name']}
         if data['type'] == 'subject':
@@ -266,7 +272,7 @@ async def handle_text(client, message):
     
     state = user_states[user_id]
     step = state["step"]
-    text = message.text.strip() # CLEAN INPUT
+    text = message.text.strip() # Clean Input
 
     if step == "ASK_NAME":
         state["data"]["name"] = text
