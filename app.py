@@ -4,6 +4,8 @@ import asyncio
 import io
 import requests
 import re
+import time
+import gzip
 from bs4 import BeautifulSoup
 from queue import Queue 
 
@@ -13,7 +15,7 @@ try:
 except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
-from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for, send_file
+from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for, send_file, after_this_request
 from pyrogram import Client, filters, idle
 from pyrogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
 from pymongo import MongoClient
@@ -38,6 +40,23 @@ files_col = db['files']
 options_col = db['options']
 
 # ===========================
+# 🚀 PERFORMANCE CACHE
+# ===========================
+# Stores scraped data for 10 minutes to prevent slow loading
+CACHE_STORAGE = {} 
+CACHE_TIMEOUT = 600 # 10 Minutes
+
+def get_cached_data(key):
+    if key in CACHE_STORAGE:
+        data, timestamp = CACHE_STORAGE[key]
+        if time.time() - timestamp < CACHE_TIMEOUT:
+            return data
+    return None
+
+def set_cached_data(key, data):
+    CACHE_STORAGE[key] = (data, time.time())
+
+# ===========================
 # 🤖 BOT STATE MANAGEMENT
 # ===========================
 bot = Client("server_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -49,6 +68,23 @@ user_states = {}
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
+# Enable GZIP Compression for faster loading
+@app.after_request
+def compress_response(response):
+    if response.status_code != 200 or response.direct_passthrough:
+        return response
+    
+    accept_encoding = request.headers.get('Accept-Encoding', '')
+    if 'gzip' not in accept_encoding.lower():
+        return response
+
+    content = response.data
+    response.data = gzip.compress(content)
+    response.headers['Content-Encoding'] = 'gzip'
+    response.headers['Content-Length'] = len(response.data)
+    response.headers['Vary'] = 'Accept-Encoding'
+    return response
+
 # --- PUBLIC ROUTES ---
 @app.route('/')
 def home():
@@ -56,12 +92,17 @@ def home():
 
 @app.route('/api/public/options', methods=['GET'])
 def get_public_options():
+    # Cache DB options for 5 minutes (DB calls are fast, but this is faster)
+    cached = get_cached_data('db_options')
+    if cached: return jsonify(cached)
+
     data = {
         "categories": list(options_col.find({"type": "category"}, {'_id': 0})),
         "courses": list(options_col.find({"type": "course"}, {'_id': 0})),
         "semesters": list(options_col.find({"type": "semester"}, {'_id': 0})),
         "subjects": list(options_col.find({"type": "subject"}, {'_id': 0}))
     }
+    set_cached_data('db_options', data)
     return jsonify(data)
 
 @app.route('/api/files', methods=['POST'])
@@ -80,10 +121,16 @@ def search_files():
         results.append(doc)
     return jsonify(results)
 
-# --- SYLLABUS SCRAPER ---
+# --- SCRAPERS WITH CACHING ---
+
 @app.route('/api/syllabus', methods=['GET'])
 def get_syllabus():
     s_type = request.args.get('type', 'UG')
+    cache_key = f'syllabus_{s_type}'
+    
+    cached = get_cached_data(cache_key)
+    if cached: return jsonify(cached)
+
     url = "https://www.subodhpgcollege.com/Syllabus_UG_Courses" if s_type == 'UG' else "https://www.subodhpgcollege.com/Syllabus_PG_Courses"
     
     try:
@@ -110,22 +157,22 @@ def get_syllabus():
             if len(cols) >= 3:
                 name = cols[1].get_text(strip=True)
                 link_tag = cols[2].find('a')
-                
                 if name and link_tag and link_tag.get('href'):
                     link = link_tag['href']
-                    if not link.startswith('http'):
-                        link = "https://www.subodhpgcollege.com/" + link
-                    
+                    if not link.startswith('http'): link = "https://www.subodhpgcollege.com/" + link
                     syllabus_list.append({'section': current_section, 'name': name, 'link': link})
         
+        set_cached_data(cache_key, syllabus_list)
         return jsonify(syllabus_list)
     except Exception as e:
         print(f"Syllabus Error: {e}")
         return jsonify([])
 
-# --- ASSIGNMENTS SCRAPER ---
 @app.route('/api/assignments', methods=['GET'])
 def get_assignments():
+    cached = get_cached_data('assignments')
+    if cached: return jsonify(cached)
+
     try:
         url = "https://www.subodhpgcollege.com/assignments"
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -149,18 +196,20 @@ def get_assignments():
                         link_tag = cols[1].find('a')
                         if name and link_tag and link_tag.get('href'):
                             link = link_tag['href']
-                            if not link.startswith('http'):
-                                link = "https://www.subodhpgcollege.com/" + link
+                            if not link.startswith('http'): link = "https://www.subodhpgcollege.com/" + link
                             assignments.append({'section': section_title, 'name': name, 'link': link})
-                            
+        
+        set_cached_data('assignments', assignments)
         return jsonify(assignments)
     except Exception as e:
         print(f"Assignment Error: {e}")
         return jsonify([])
 
-# --- NEW: TIME TABLE SCRAPER ---
 @app.route('/api/timetables', methods=['GET'])
 def get_timetables():
+    cached = get_cached_data('timetables')
+    if cached: return jsonify(cached)
+
     try:
         url = "https://www.subodhpgcollege.com/Time-table"
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -168,47 +217,37 @@ def get_timetables():
         soup = BeautifulSoup(response.content, 'html.parser')
         
         timetables = []
-        # Find all tables
         tables = soup.find_all('table', class_='table')
         
         for table in tables:
-            # Attempt to find the heading for this table (usually an h3 before it)
             section_title = "Examination Time Table"
             prev_heading = table.find_previous('h3')
-            if prev_heading:
-                section_title = prev_heading.get_text(strip=True)
+            if prev_heading: section_title = prev_heading.get_text(strip=True)
             
             rows = table.find_all('tr')
             for row in rows:
                 cols = row.find_all('td')
-                if not cols: continue # Skip headers
-                
-                # Structure: Course, Semester/ExamType, Link
+                if not cols: continue
                 if len(cols) >= 3:
                     name = cols[0].get_text(strip=True)
                     sem_or_type = cols[1].get_text(strip=True)
                     link_tag = cols[2].find('a')
-                    
                     if link_tag and link_tag.get('href'):
                         link = link_tag['href']
-                        if not link.startswith('http'):
-                            link = "https://www.subodhpgcollege.com/" + link
-                        
-                        full_name = f"{name} ({sem_or_type})"
-                        timetables.append({
-                            'section': section_title,
-                            'name': full_name,
-                            'link': link
-                        })
+                        if not link.startswith('http'): link = "https://www.subodhpgcollege.com/" + link
+                        timetables.append({'section': section_title, 'name': f"{name} ({sem_or_type})", 'link': link})
         
+        set_cached_data('timetables', timetables)
         return jsonify(timetables)
     except Exception as e:
         print(f"Time Table Error: {e}")
         return jsonify([])
 
-# --- NOTICE BOARD SCRAPER ---
 @app.route('/api/notices', methods=['GET'])
 def get_notices():
+    cached = get_cached_data('notices')
+    if cached: return jsonify(cached)
+
     try:
         url = "https://www.subodhpgcollege.com/notice_board"
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -235,18 +274,18 @@ def get_notices():
                         date_text = full_meta.split("Posted On :")[-1].strip()
                     for a in h6.find_all('a'):
                         link_url = a['href']
-                        if not link_url.startswith('http'):
-                            link_url = "https://www.subodhpgcollege.com/" + link_url
+                        if not link_url.startswith('http'): link_url = "https://www.subodhpgcollege.com/" + link_url
                         links.append({'text': a.get_text(strip=True), 'url': link_url})
 
             notices.append({'title': title, 'date': date_text, 'links': links})
             
+        set_cached_data('notices', notices)
         return jsonify(notices)
     except Exception as e:
         print(f"Scraping Error: {e}")
         return jsonify([])
 
-# --- FAST STREAMING DOWNLOAD ROUTE ---
+# --- DOWNLOAD ROUTE ---
 @app.route('/download/<file_id>')
 def download_file(file_id):
     file_doc = files_col.find_one({"file_id": file_id})
@@ -268,21 +307,15 @@ def download_file(file_id):
     def consumer():
         while True:
             chunk = chunk_queue.get()
-            if chunk is None:
-                break
+            if chunk is None: break
             yield chunk
 
-    if not bot.is_connected:
-        return "Bot is starting... try again in 10s", 503
-        
+    if not bot.is_connected: return "Bot is starting...", 503
     asyncio.run_coroutine_threadsafe(producer(), bot.loop)
 
     return Response(
         consumer(),
-        headers={
-            "Content-Disposition": f"attachment; filename={filename}",
-            "Content-Type": "application/octet-stream"
-        }
+        headers={"Content-Disposition": f"attachment; filename={filename}", "Content-Type": "application/octet-stream"}
     )
 
 # --- ADMIN ROUTES ---
@@ -317,14 +350,11 @@ def manage_options():
     if request.method == 'POST':
         data = request.json
         data['name'] = data['name'].strip()
-        
         query = {"type": data['type'], "name": data['name']}
         if data['type'] == 'subject':
             query['parent'] = data.get('parent')
             query['semester'] = data.get('semester')
-
-        if not options_col.find_one(query):
-            options_col.insert_one(data)
+        if not options_col.find_one(query): options_col.insert_one(data)
         return jsonify({"status": "success"})
 
     if request.method == 'DELETE':
@@ -335,32 +365,26 @@ def manage_options():
 @app.route('/api/admin/files', methods=['GET', 'DELETE'])
 def manage_files():
     if not session.get('logged_in'): return jsonify({"error": "Unauthorized"}), 401
-
     if request.method == 'GET':
         files = []
         for doc in files_col.find().sort('_id', -1).limit(50):
             doc['_id'] = str(doc['_id'])
             files.append(doc)
         return jsonify(files)
-
     if request.method == 'DELETE':
         data = request.json
-        file_id = data.get('file_id')
-        files_col.delete_one({"file_id": file_id})
+        files_col.delete_one({"file_id": data.get('file_id')})
         return jsonify({"status": "deleted"})
 
 # ===========================
 # 🤖 BOT LOGIC
 # ===========================
-
 async def get_keyboard(option_type, parent=None, semester=None):
     query = {"type": option_type}
     if parent: query["parent"] = parent
     if semester: query["semester"] = semester
-    
     options = list(options_col.find(query))
     if not options: return None
-
     buttons = []
     row = []
     for doc in options:
@@ -369,24 +393,18 @@ async def get_keyboard(option_type, parent=None, semester=None):
             buttons.append(row)
             row = []
     if row: buttons.append(row)
-    
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=True)
 
 @bot.on_message(filters.document & filters.private)
 async def start_upload(client, message):
     user_id = message.from_user.id
-    user_states[user_id] = {
-        "step": "ASK_NAME",
-        "file_msg": message,
-        "data": {}
-    }
+    user_states[user_id] = {"step": "ASK_NAME", "file_msg": message, "data": {}}
     await message.reply("📝 **Enter a Name for this file:**", reply_markup=ReplyKeyboardRemove())
 
 @bot.on_message(filters.text & filters.private)
 async def handle_text(client, message):
     user_id = message.from_user.id
     if user_id not in user_states: return
-    
     state = user_states[user_id]
     step = state["step"]
     text = message.text.strip()
@@ -394,44 +412,36 @@ async def handle_text(client, message):
     if step == "ASK_NAME":
         state["data"]["name"] = text
         kb = await get_keyboard("category")
-        if not kb: return await message.reply("❌ No Categories found! Add in Admin Panel.")
+        if not kb: return await message.reply("❌ No Categories found!")
         state["step"] = "ASK_CAT"
         await message.reply("📂 **Select Category:**", reply_markup=kb)
-
     elif step == "ASK_CAT":
         state["data"]["category"] = text
         kb = await get_keyboard("course")
         if not kb: return await message.reply("❌ No Courses found!")
         state["step"] = "ASK_COURSE"
         await message.reply("🎓 **Select Course:**", reply_markup=kb)
-
     elif step == "ASK_COURSE":
         state["data"]["course"] = text
         kb = await get_keyboard("semester")
         if not kb: return await message.reply("❌ No Semesters found!")
         state["step"] = "ASK_SEM"
         await message.reply("⏳ **Select Semester:**", reply_markup=kb)
-
     elif step == "ASK_SEM":
         state["data"]["semester"] = text
         course = state["data"]["course"]
         kb = await get_keyboard("subject", parent=course, semester=text)
         if not kb: kb = await get_keyboard("subject", parent=course)
         if not kb: kb = await get_keyboard("subject")
-
-        if not kb: return await message.reply("❌ No Subjects found for this combination!")
+        if not kb: return await message.reply("❌ No Subjects found!")
         state["step"] = "ASK_SUB"
         await message.reply("📚 **Select Subject:**", reply_markup=kb)
-
     elif step == "ASK_SUB":
         state["data"]["subject"] = text
-        
         status_msg = await message.reply("☁️ Uploading...", reply_markup=ReplyKeyboardRemove())
-        
         try:
             original_msg = state["file_msg"]
             saved_msg = await original_msg.copy(CHANNEL_ID)
-            
             file_data = {
                 "name": state["data"]["name"],
                 "category": state["data"]["category"],
@@ -442,18 +452,10 @@ async def handle_text(client, message):
                 "msg_link": saved_msg.link
             }
             files_col.insert_one(file_data)
-            
             await status_msg.delete() 
-            await message.reply(
-                f"✅ **Saved Successfully!**\n\n"
-                f"📄 {file_data['name']}\n"
-                f"🎓 {file_data['course']} > {file_data['semester']}\n"
-                f"📚 {file_data['subject']}"
-            )
-            
+            await message.reply(f"✅ **Saved!**\n📄 {file_data['name']}")
         except Exception as e:
             await message.reply(f"❌ Error: {e}")
-        
         del user_states[user_id]
 
 # ===========================
@@ -465,17 +467,12 @@ def run_flask():
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
-    
     print("🤖 Starting Bot...")
     bot.start()
-    
     try:
         print(f"🔄 Caching Channel ID: {CHANNEL_ID}...")
         bot.loop.run_until_complete(bot.get_chat(CHANNEL_ID))
-        print("✅ Channel Cached Successfully!")
-    except Exception as e:
-        print(f"⚠️ Cache Warning (Check if Bot is Admin): {e}")
-
-    print("🚀 System Online! Bot is listening...")
+    except Exception as e: print(f"⚠️ Cache Warning: {e}")
+    print("🚀 System Online!")
     idle()
     bot.stop()
