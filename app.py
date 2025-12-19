@@ -123,7 +123,7 @@ def get_syllabus():
         print(f"Syllabus Error: {e}")
         return jsonify([])
 
-# --- NEW: ASSIGNMENTS SCRAPER ---
+# --- ASSIGNMENTS SCRAPER ---
 @app.route('/api/assignments', methods=['GET'])
 def get_assignments():
     try:
@@ -133,17 +133,12 @@ def get_assignments():
         soup = BeautifulSoup(response.content, 'html.parser')
         
         assignments = []
-        
-        # The page structure groups tables under headings
-        # We find all headings first
         headings = soup.find_all('div', class_='heading_s1')
         
         for heading_div in headings:
             h4 = heading_div.find('h4')
             section_title = h4.get_text(strip=True) if h4 else "General Assignments"
             
-            # The table is in the next sibling div with class 'table-responsive'
-            # We iterate siblings until we find the table wrapper
             sibling = heading_div.find_next_sibling('div', class_='table-responsive')
             if sibling:
                 rows = sibling.find_all('tr')
@@ -152,21 +147,63 @@ def get_assignments():
                     if len(cols) >= 2:
                         name = cols[0].get_text(strip=True)
                         link_tag = cols[1].find('a')
-                        
                         if name and link_tag and link_tag.get('href'):
                             link = link_tag['href']
                             if not link.startswith('http'):
                                 link = "https://www.subodhpgcollege.com/" + link
-                            
-                            assignments.append({
-                                'section': section_title,
-                                'name': name,
-                                'link': link
-                            })
+                            assignments.append({'section': section_title, 'name': name, 'link': link})
                             
         return jsonify(assignments)
     except Exception as e:
         print(f"Assignment Error: {e}")
+        return jsonify([])
+
+# --- NEW: TIME TABLE SCRAPER ---
+@app.route('/api/timetables', methods=['GET'])
+def get_timetables():
+    try:
+        url = "https://www.subodhpgcollege.com/Time-table"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        timetables = []
+        # Find all tables
+        tables = soup.find_all('table', class_='table')
+        
+        for table in tables:
+            # Attempt to find the heading for this table (usually an h3 before it)
+            section_title = "Examination Time Table"
+            prev_heading = table.find_previous('h3')
+            if prev_heading:
+                section_title = prev_heading.get_text(strip=True)
+            
+            rows = table.find_all('tr')
+            for row in rows:
+                cols = row.find_all('td')
+                if not cols: continue # Skip headers
+                
+                # Structure: Course, Semester/ExamType, Link
+                if len(cols) >= 3:
+                    name = cols[0].get_text(strip=True)
+                    sem_or_type = cols[1].get_text(strip=True)
+                    link_tag = cols[2].find('a')
+                    
+                    if link_tag and link_tag.get('href'):
+                        link = link_tag['href']
+                        if not link.startswith('http'):
+                            link = "https://www.subodhpgcollege.com/" + link
+                        
+                        full_name = f"{name} ({sem_or_type})"
+                        timetables.append({
+                            'section': section_title,
+                            'name': full_name,
+                            'link': link
+                        })
+        
+        return jsonify(timetables)
+    except Exception as e:
+        print(f"Time Table Error: {e}")
         return jsonify([])
 
 # --- NOTICE BOARD SCRAPER ---
@@ -196,7 +233,6 @@ def get_notices():
                     full_meta = h6.get_text(strip=True)
                     if "Posted On :" in full_meta:
                         date_text = full_meta.split("Posted On :")[-1].strip()
-                    
                     for a in h6.find_all('a'):
                         link_url = a['href']
                         if not link_url.startswith('http'):
