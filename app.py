@@ -3,7 +3,7 @@ import threading
 import asyncio
 import io
 import requests
-import re  # <--- NEW IMPORT
+import re
 from bs4 import BeautifulSoup
 from queue import Queue 
 
@@ -64,7 +64,6 @@ def get_public_options():
     }
     return jsonify(data)
 
-# --- 🔍 FIXED SEARCH API (Case Insensitive) ---
 @app.route('/api/files', methods=['POST'])
 def search_files():
     filters = request.json
@@ -72,9 +71,6 @@ def search_files():
     
     for key, value in filters.items():
         if value and value != "":
-            # FIX: Use Regex for Case-Insensitive Matching
-            # This makes "Physics" match "physics" match "PHYSICS"
-            # It also handles accidental spaces
             safe_val = re.escape(value.strip())
             query[key] = {"$regex": f"^{safe_val}$", "$options": "i"}
             
@@ -84,7 +80,60 @@ def search_files():
         results.append(doc)
     return jsonify(results)
 
-# --- NEW NOTICE BOARD SCRAPER ---
+# --- NEW: SYLLABUS SCRAPER ---
+@app.route('/api/syllabus', methods=['GET'])
+def get_syllabus():
+    s_type = request.args.get('type', 'UG')
+    url = "https://www.subodhpgcollege.com/Syllabus_UG_Courses" if s_type == 'UG' else "https://www.subodhpgcollege.com/Syllabus_PG_Courses"
+    
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        syllabus_list = []
+        # Find the main table
+        table = soup.find('table', class_='table')
+        if not table:
+            return jsonify([])
+
+        rows = table.find_all('tr')
+        current_section = "General"
+
+        for row in rows:
+            cols = row.find_all('td')
+            if not cols: continue
+
+            # Check if it's a section header (usually has colspan or specific styling)
+            if len(cols) == 1 or (len(cols) > 0 and cols[0].get('colspan')):
+                text = cols[0].get_text(strip=True)
+                if text: current_section = text
+                continue
+            
+            # Normal row: [Empty/Category, Name, Download]
+            # Usually the 2nd column has the name and 3rd has the link
+            if len(cols) >= 3:
+                name = cols[1].get_text(strip=True)
+                link_tag = cols[2].find('a')
+                
+                if name and link_tag and link_tag.get('href'):
+                    link = link_tag['href']
+                    if not link.startswith('http'):
+                        link = "https://www.subodhpgcollege.com/" + link
+                    
+                    syllabus_list.append({
+                        'section': current_section,
+                        'name': name,
+                        'link': link
+                    })
+        
+        return jsonify(syllabus_list)
+
+    except Exception as e:
+        print(f"Syllabus Error: {e}")
+        return jsonify([])
+
+# --- NOTICE BOARD SCRAPER ---
 @app.route('/api/notices', methods=['GET'])
 def get_notices():
     try:
@@ -199,7 +248,7 @@ def manage_options():
 
     if request.method == 'POST':
         data = request.json
-        data['name'] = data['name'].strip() # Clean Input
+        data['name'] = data['name'].strip()
         
         query = {"type": data['type'], "name": data['name']}
         if data['type'] == 'subject':
@@ -272,7 +321,7 @@ async def handle_text(client, message):
     
     state = user_states[user_id]
     step = state["step"]
-    text = message.text.strip() # Clean Input
+    text = message.text.strip()
 
     if step == "ASK_NAME":
         state["data"]["name"] = text
