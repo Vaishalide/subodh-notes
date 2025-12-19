@@ -87,16 +87,13 @@ def get_notices():
         soup = BeautifulSoup(response.content, 'html.parser')
         
         notices = []
-        # Find all notice items based on the HTML structure provided
         items = soup.find_all('li', class_='comment_info')
         
         for item in items:
-            # Extract Text
             content_div = item.find('div', class_='comment_content')
             text_p = content_div.find('p')
             title = text_p.get_text(strip=True) if text_p else "No Title"
             
-            # Extract Date & Link
             meta = content_div.find('div', class_='meta_data')
             date_text = "Unknown Date"
             links = []
@@ -108,10 +105,8 @@ def get_notices():
                     if "Posted On :" in full_meta:
                         date_text = full_meta.split("Posted On :")[-1].strip()
                     
-                    # Find download links
                     for a in h6.find_all('a'):
                         link_url = a['href']
-                        # Fix relative URLs
                         if not link_url.startswith('http'):
                             link_url = "https://www.subodhpgcollege.com/" + link_url
                         links.append({'text': a.get_text(strip=True), 'url': link_url})
@@ -197,6 +192,9 @@ def manage_options():
 
     if request.method == 'POST':
         data = request.json
+        # CLEAN DATA: Strip whitespace
+        data['name'] = data['name'].strip()
+        
         query = {"type": data['type'], "name": data['name']}
         if data['type'] == 'subject':
             query['parent'] = data.get('parent')
@@ -268,7 +266,7 @@ async def handle_text(client, message):
     
     state = user_states[user_id]
     step = state["step"]
-    text = message.text
+    text = message.text.strip() # CLEAN INPUT
 
     if step == "ASK_NAME":
         state["data"]["name"] = text
