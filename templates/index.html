@@ -12,7 +12,6 @@
     </script>
     <style>
         .notice-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
-        /* Blink effect for new notices */
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
         .new-tag { animation: blink 1.5s infinite; }
     </style>
@@ -47,7 +46,7 @@
                 </div>
                 <div class="relative">
                     <label class="text-xs font-bold text-gray-500 uppercase">Subject</label>
-                    <select id="sel-sub" class="w-full p-2 border rounded bg-gray-50 focus:ring-2 focus:ring-brand"><option value="">Select Subject</option></select>
+                    <select id="sel-sub" onchange="searchFiles()" class="w-full p-2 border rounded bg-gray-50 focus:ring-2 focus:ring-brand"><option value="">All Subjects</option></select>
                 </div>
             </div>
             
@@ -91,7 +90,7 @@
         // --- INITIALIZATION ---
         async function init() {
             loadOptions();
-            fetchNotices(); // Load notices immediately
+            fetchNotices(); 
         }
 
         async function loadOptions() {
@@ -198,7 +197,6 @@
             document.getElementById('file-section').classList.add('hidden');
             document.getElementById('notice-section').classList.remove('hidden');
             
-            // Clear dropdowns
             document.getElementById('sel-cat').value = "";
             document.getElementById('sel-course').value = "";
             document.getElementById('sel-sem').value = "";
