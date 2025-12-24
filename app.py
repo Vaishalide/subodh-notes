@@ -21,22 +21,28 @@ from pyrogram import Client, filters, idle
 from pyrogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
 from pymongo import MongoClient
 
-# Custom Modules
-from drive_utils import upload_to_drive, get_storage_info
-from pdf_utils import add_watermark_page
+# Custom Modules (Make sure you have drive_utils.py and pdf_utils.py files created)
+try:
+    from drive_utils import upload_to_drive, get_storage_info
+    from pdf_utils import add_watermark_page
+except ImportError:
+    print("⚠️ WARNING: drive_utils.py or pdf_utils.py not found! Drive upload will fail.")
 
 # ===========================
 # ⚙️ CONFIGURATION
 # ===========================
 API_ID = int(os.environ.get("API_ID", "26233871"))
-API_HASH = os.environ.get("API_HASH", "d1274875c02026a781bbc19d12daa8b6"))
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8599650881:AAH8ntxRQo6EMoIC0ewl-VsgbeuDFjiDmd0"))
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://vabenix546_db_user:JiBKbhvSUF6RziWO@cluster0.hlq6wml.mongodb.net/?appName=Cluster0"))
+# FIXED: Removed extra ')' at the end of these lines
+API_HASH = os.environ.get("API_HASH", "d1274875c02026a781bbc19d12daa8b6")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8599650881:AAH8ntxRQo6EMoIC0ewl-VsgbeuDFjiDmd0")
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://vabenix546_db_user:JiBKbhvSUF6RziWO@cluster0.hlq6wml.mongodb.net/?appName=Cluster0")
+
 CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1001819373091"))
-DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "YOUR_GOOGLE_DRIVE_FOLDER_ID_HERE") # <--- ADD THIS TO ENV
+# You must set DRIVE_FOLDER_ID in Heroku Config Vars
+DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "") 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASS", "admin123")
 SECRET_KEY = "super_secret_key_change_this"
-WEBSITE_LINK = "https://your-app-url.herokuapp.com" # Change this to your actual URL
+WEBSITE_LINK = "https://subodhnotes-10fc50a27a91.herokuapp.com" 
 
 # ===========================
 # 🗄️ DATABASE
@@ -118,41 +124,150 @@ def search_files():
         results.append(doc)
     return jsonify(results)
 
-# --- SCRAPERS (Keep your existing scraper code here) ---
-# ... (Paste your syllabus, assignments, timetable, notices scrapers here exactly as before) ...
-# I am omitting them to save space, but DO NOT DELETE THEM from your file.
+# --- SCRAPERS ---
 @app.route('/api/syllabus', methods=['GET'])
 def get_syllabus():
-    # ... (Keep existing code) ...
-    return jsonify([]) 
+    s_type = request.args.get('type', 'UG')
+    cache_key = f'syllabus_{s_type}'
+    cached = get_cached_data(cache_key)
+    if cached: return jsonify(cached)
+
+    url = "https://www.subodhpgcollege.com/Syllabus_UG_Courses" if s_type == 'UG' else "https://www.subodhpgcollege.com/Syllabus_PG_Courses"
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        syllabus_list = []
+        table = soup.find('table', class_='table')
+        if not table: return jsonify([])
+        rows = table.find_all('tr')
+        current_section = "General"
+        for row in rows:
+            cols = row.find_all('td')
+            if not cols: continue
+            if len(cols) == 1 or (len(cols) > 0 and cols[0].get('colspan')):
+                text = cols[0].get_text(strip=True)
+                if text: current_section = text
+                continue
+            if len(cols) >= 3:
+                name = cols[1].get_text(strip=True)
+                link_tag = cols[2].find('a')
+                if name and link_tag and link_tag.get('href'):
+                    link = link_tag['href']
+                    if not link.startswith('http'): link = "https://www.subodhpgcollege.com/" + link
+                    syllabus_list.append({'section': current_section, 'name': name, 'link': link})
+        set_cached_data(cache_key, syllabus_list)
+        return jsonify(syllabus_list)
+    except Exception as e:
+        print(f"Syllabus Error: {e}")
+        return jsonify([])
 
 @app.route('/api/assignments', methods=['GET'])
 def get_assignments():
-    # ... (Keep existing code) ...
-    return jsonify([])
+    cached = get_cached_data('assignments')
+    if cached: return jsonify(cached)
+    try:
+        url = "https://www.subodhpgcollege.com/assignments"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        assignments = []
+        headings = soup.find_all('div', class_='heading_s1')
+        for heading_div in headings:
+            h4 = heading_div.find('h4')
+            section_title = h4.get_text(strip=True) if h4 else "General Assignments"
+            sibling = heading_div.find_next_sibling('div', class_='table-responsive')
+            if sibling:
+                rows = sibling.find_all('tr')
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) >= 2:
+                        name = cols[0].get_text(strip=True)
+                        link_tag = cols[1].find('a')
+                        if name and link_tag and link_tag.get('href'):
+                            link = link_tag['href']
+                            if not link.startswith('http'): link = "https://www.subodhpgcollege.com/" + link
+                            assignments.append({'section': section_title, 'name': name, 'link': link})
+        set_cached_data('assignments', assignments)
+        return jsonify(assignments)
+    except Exception as e:
+        print(f"Assignment Error: {e}")
+        return jsonify([])
 
 @app.route('/api/timetables', methods=['GET'])
 def get_timetables():
-    # ... (Keep existing code) ...
-    return jsonify([])
+    cached = get_cached_data('timetables')
+    if cached: return jsonify(cached)
+    try:
+        url = "https://www.subodhpgcollege.com/Time-table"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        timetables = []
+        tables = soup.find_all('table', class_='table')
+        for table in tables:
+            section_title = "Examination Time Table"
+            prev_heading = table.find_previous('h3')
+            if prev_heading: section_title = prev_heading.get_text(strip=True)
+            rows = table.find_all('tr')
+            for row in rows:
+                cols = row.find_all('td')
+                if not cols: continue
+                if len(cols) >= 3:
+                    name = cols[0].get_text(strip=True)
+                    sem_or_type = cols[1].get_text(strip=True)
+                    link_tag = cols[2].find('a')
+                    if link_tag and link_tag.get('href'):
+                        link = link_tag['href']
+                        if not link.startswith('http'): link = "https://www.subodhpgcollege.com/" + link
+                        timetables.append({'section': section_title, 'name': f"{name} ({sem_or_type})", 'link': link})
+        set_cached_data('timetables', timetables)
+        return jsonify(timetables)
+    except Exception as e:
+        print(f"Time Table Error: {e}")
+        return jsonify([])
 
 @app.route('/api/notices', methods=['GET'])
 def get_notices():
-    # ... (Keep existing code) ...
-    return jsonify([])
+    cached = get_cached_data('notices')
+    if cached: return jsonify(cached)
+    try:
+        url = "https://www.subodhpgcollege.com/notice_board"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        notices = []
+        items = soup.find_all('li', class_='comment_info')
+        for item in items:
+            content_div = item.find('div', class_='comment_content')
+            text_p = content_div.find('p')
+            title = text_p.get_text(strip=True) if text_p else "No Title"
+            meta = content_div.find('div', class_='meta_data')
+            date_text = "Unknown Date"
+            links = []
+            if meta:
+                h6 = meta.find('h6')
+                if h6:
+                    full_meta = h6.get_text(strip=True)
+                    if "Posted On :" in full_meta: date_text = full_meta.split("Posted On :")[-1].strip()
+                    for a in h6.find_all('a'):
+                        link_url = a['href']
+                        if not link_url.startswith('http'): link_url = "https://www.subodhpgcollege.com/" + link_url
+                        links.append({'text': a.get_text(strip=True), 'url': link_url})
+            notices.append({'title': title, 'date': date_text, 'links': links})
+        set_cached_data('notices', notices)
+        return jsonify(notices)
+    except Exception as e:
+        print(f"Scraping Error: {e}")
+        return jsonify([])
 
 # --- 🚀 NEW DOWNLOAD ROUTE (Redirect to Drive) ---
 @app.route('/download/<file_id>')
 def download_file(file_id):
-    # Retrieve the Google Drive Link from DB
     file_doc = files_col.find_one({"file_id": file_id})
-    
     if file_doc and 'drive_link' in file_doc:
-        # Redirect user directly to Google Drive (Zero server load)
         return redirect(file_doc['drive_link'])
-    
-    # Fallback for old files (Telegram Streaming)
-    return "This file is on old storage. Please contact admin to migrate."
+    return "File is archived or not on Drive. Contact Admin."
 
 # --- ADMIN ROUTES ---
 @app.route('/admin', methods=['GET', 'POST'])
@@ -169,19 +284,47 @@ def admin_dashboard():
     if not session.get('logged_in'): return redirect(url_for('admin_login'))
     return render_template('admin.html')
 
-# ... (Keep manage_options and manage_files routes same as before) ...
 @app.route('/api/admin/options', methods=['GET', 'POST', 'DELETE'])
 def manage_options():
-    # ... (Keep existing code) ...
-    return jsonify({})
+    if not session.get('logged_in'): return jsonify({"error": "Unauthorized"}), 401
+    if request.method == 'GET':
+        data = {
+            "categories": list(options_col.find({"type": "category"}, {'_id': 0})),
+            "courses": list(options_col.find({"type": "course"}, {'_id': 0})),
+            "semesters": list(options_col.find({"type": "semester"}, {'_id': 0})),
+            "subjects": list(options_col.find({"type": "subject"}, {'_id': 0}))
+        }
+        return jsonify(data)
+    if request.method == 'POST':
+        data = request.json
+        data['name'] = data['name'].strip()
+        query = {"type": data['type'], "name": data['name']}
+        if data['type'] == 'subject':
+            query['parent'] = data.get('parent')
+            query['semester'] = data.get('semester')
+        if not options_col.find_one(query): options_col.insert_one(data)
+        return jsonify({"status": "success"})
+    if request.method == 'DELETE':
+        data = request.json
+        options_col.delete_one({"type": data['type'], "name": data['name']})
+        return jsonify({"status": "deleted"})
 
 @app.route('/api/admin/files', methods=['GET', 'DELETE'])
 def manage_files():
-    # ... (Keep existing code) ...
-    return jsonify({})
+    if not session.get('logged_in'): return jsonify({"error": "Unauthorized"}), 401
+    if request.method == 'GET':
+        files = []
+        for doc in files_col.find().sort('_id', -1).limit(50):
+            doc['_id'] = str(doc['_id'])
+            files.append(doc)
+        return jsonify(files)
+    if request.method == 'DELETE':
+        data = request.json
+        files_col.delete_one({"file_id": data.get('file_id')})
+        return jsonify({"status": "deleted"})
 
 # ===========================
-# 🤖 BOT LOGIC (UPDATED FOR DRIVE)
+# 🤖 BOT LOGIC (Google Drive Upload)
 # ===========================
 async def get_keyboard(option_type, parent=None, semester=None):
     query = {"type": option_type}
@@ -219,21 +362,18 @@ async def handle_text(client, message):
         if not kb: return await message.reply("❌ No Categories found!")
         state["step"] = "ASK_CAT"
         await message.reply("📂 **Select Category:**", reply_markup=kb)
-
     elif step == "ASK_CAT":
         state["data"]["category"] = text
         kb = await get_keyboard("course")
         if not kb: return await message.reply("❌ No Courses found!")
         state["step"] = "ASK_COURSE"
         await message.reply("🎓 **Select Course:**", reply_markup=kb)
-
     elif step == "ASK_COURSE":
         state["data"]["course"] = text
         kb = await get_keyboard("semester")
         if not kb: return await message.reply("❌ No Semesters found!")
         state["step"] = "ASK_SEM"
         await message.reply("⏳ **Select Semester:**", reply_markup=kb)
-
     elif step == "ASK_SEM":
         state["data"]["semester"] = text
         course = state["data"]["course"]
@@ -243,7 +383,6 @@ async def handle_text(client, message):
         if not kb: return await message.reply("❌ No Subjects found!")
         state["step"] = "ASK_SUB"
         await message.reply("📚 **Select Subject:**", reply_markup=kb)
-
     elif step == "ASK_SUB":
         state["data"]["subject"] = text
         status_msg = await message.reply("☁️ **Downloading & Processing...**", reply_markup=ReplyKeyboardRemove())
@@ -255,16 +394,20 @@ async def handle_text(client, message):
             
             # 2. Add Watermark if PDF
             if file_path.lower().endswith(".pdf"):
-                await status_msg.edit_text("🖼 **Adding Watermark...**")
-                output_path = "watermarked_" + os.path.basename(file_path)
-                # Run PDF processing in a separate thread to not block bot
-                await asyncio.to_thread(add_watermark_page, file_path, output_path, "NoteHub", WEBSITE_LINK)
-                final_path = output_path
+                try:
+                    await status_msg.edit_text("🖼 **Adding Watermark...**")
+                    output_path = "watermarked_" + os.path.basename(file_path)
+                    await asyncio.to_thread(add_watermark_page, file_path, output_path, "NoteHub", WEBSITE_LINK)
+                    final_path = output_path
+                except Exception as e:
+                    print(f"Watermark Error: {e}")
             
             # 3. Upload to Google Drive
+            if not DRIVE_FOLDER_ID:
+                await status_msg.edit_text("❌ Error: Drive Folder ID not set in Heroku!")
+                return
+
             await status_msg.edit_text("🚀 **Uploading to Google Drive...**")
-            
-            # Run upload in thread
             file_id, drive_link = await asyncio.to_thread(upload_to_drive, final_path, state["data"]["name"], DRIVE_FOLDER_ID)
             
             # 4. Save to Database
@@ -274,12 +417,12 @@ async def handle_text(client, message):
                 "course": state["data"]["course"],
                 "semester": state["data"]["semester"],
                 "subject": state["data"]["subject"],
-                "file_id": file_id,   # Google Drive File ID
-                "drive_link": drive_link # Direct Link
+                "file_id": file_id,   # Drive ID
+                "drive_link": drive_link 
             }
             files_col.insert_one(file_data)
             
-            # 5. Cleanup & Check Space
+            # 5. Cleanup & Space
             if os.path.exists(file_path): os.remove(file_path)
             if os.path.exists(final_path) and final_path != file_path: os.remove(final_path)
             
@@ -287,15 +430,15 @@ async def handle_text(client, message):
             
             await status_msg.delete() 
             await message.reply(
-                f"✅ **File Published!**\n\n"
+                f"✅ **Uploaded Successfully!**\n\n"
                 f"📄 {file_data['name']}\n"
-                f"🔗 Drive: [Open Link]({drive_link})\n"
-                f"💾 Storage: {space_info}"
+                f"🔗 [Open in Drive]({drive_link})\n"
+                f"💾 Drive Space: {space_info}"
             )
             
         except Exception as e:
             await message.reply(f"❌ Error: {e}")
-            # Cleanup on error
+            # Cleanup
             if 'file_path' in locals() and os.path.exists(file_path): os.remove(file_path)
         
         del user_states[user_id]
@@ -311,6 +454,10 @@ if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
     print("🤖 Starting Bot...")
     bot.start()
+    try:
+        print(f"🔄 Caching Channel ID: {CHANNEL_ID}...")
+        bot.loop.run_until_complete(bot.get_chat(CHANNEL_ID))
+    except Exception as e: print(f"⚠️ Cache Warning: {e}")
     print("🚀 System Online!")
     idle()
     bot.stop()
