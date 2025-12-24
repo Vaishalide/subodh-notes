@@ -1,13 +1,14 @@
 import os
+import shutil
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.colors import blue, black
 from pypdf import PdfReader, PdfWriter
 
 def add_watermark_page(input_path, output_path, website_name="NoteHub", website_link="https://your-website.com"):
+    watermark_file = "watermark_temp.pdf"
     try:
         # 1. Create the Watermark/Cover Page
-        watermark_file = "watermark_temp.pdf"
         c = canvas.Canvas(watermark_file, pagesize=letter)
         width, height = letter
         
@@ -48,13 +49,11 @@ def add_watermark_page(input_path, output_path, website_name="NoteHub", website_
         with open(output_path, "wb") as f:
             writer.write(f)
             
-        # Cleanup temp cover
-        if os.path.exists(watermark_file):
-            os.remove(watermark_file)
-            
     except Exception as e:
         print(f"PDF Processing Error: {e}")
         # If watermarking fails, just copy the original file to output path
-        # This ensures the upload process continues even if watermark fails
-        import shutil
         shutil.copy(input_path, output_path)
+    finally:
+        # Cleanup temp cover
+        if os.path.exists(watermark_file):
+            os.remove(watermark_file)
