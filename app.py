@@ -36,10 +36,12 @@ except ImportError:
 # ===========================
 API_ID = int(os.environ.get("API_ID", "26233871"))
 API_HASH = os.environ.get("API_HASH", "d1274875c02026a781bbc19d12daa8b6")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8411335287:AAFTEW7Ah_A_oDuL-14HraMHWZasS1-Acnw")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8599650881:AAH8ntxRQo6EMoIC0ewl-VsgbeuDFjiDmd0")
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://vabenix546_db_user:JiBKbhvSUF6RziWO@cluster0.hlq6wml.mongodb.net/?appName=Cluster0")
 
 CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1001819373091"))
+# GOOGLE DRIVE CONFIG (OAUTH)
+# Make sure GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN are set in Heroku
 DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "") 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASS", "admin123")
 SECRET_KEY = "super_secret_key_change_this"
@@ -325,7 +327,7 @@ def manage_files():
         return jsonify({"status": "deleted"})
 
 # ===========================
-# 🤖 BOT LOGIC (SAFE EDIT FIX)
+# 🤖 BOT LOGIC
 # ===========================
 async def get_keyboard(option_type, parent=None, semester=None):
     query = {"type": option_type}
@@ -388,7 +390,7 @@ async def handle_text(client, message):
         state["data"]["subject"] = text
         status_msg = await message.reply("☁️ **Processing File...**", reply_markup=ReplyKeyboardRemove())
         
-        # 🛡️ SAFE EDIT HELPER: Prevents crashing if edit fails
+        # 🛡️ SAFE EDIT HELPER
         async def safe_edit(text):
             try:
                 await status_msg.edit_text(text)
@@ -446,7 +448,6 @@ async def handle_text(client, message):
             )
             
         except Exception as e:
-            # Print full error trace to logs so we can debug properly
             traceback.print_exc()
             await message.reply(f"❌ Error: {e}")
             if 'file_path' in locals() and os.path.exists(file_path): os.remove(file_path)
@@ -467,7 +468,7 @@ if __name__ == "__main__":
         bot.start()
         print("✅ Bot Started!")
     except FloodWait as e:
-        print(f"❌ FLOOD WAIT: {e.value} seconds. SWITCH TO A NEW BOT TOKEN TO FIX THIS.")
+        print(f"❌ FLOOD WAIT: {e.value} seconds. SWITCH TO A NEW BOT TOKEN.")
         sys.exit(1)
     except Exception as e:
         print(f"❌ Start Error: {e}")
