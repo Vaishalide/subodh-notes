@@ -7,6 +7,8 @@ import re
 import time
 import gzip
 import shutil
+import sys
+import traceback
 from bs4 import BeautifulSoup
 from queue import Queue 
 
@@ -19,6 +21,7 @@ except RuntimeError:
 from flask import Flask, jsonify, request, Response, render_template, session, redirect, url_for, send_file, after_this_request
 from pyrogram import Client, filters, idle
 from pyrogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
+from pyrogram.errors import FloodWait, MessageNotModified, MessageIdInvalid
 from pymongo import MongoClient
 
 # Custom Modules
@@ -33,7 +36,7 @@ except ImportError:
 # ===========================
 API_ID = int(os.environ.get("API_ID", "26233871"))
 API_HASH = os.environ.get("API_HASH", "d1274875c02026a781bbc19d12daa8b6")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8411335287:AAFTEW7Ah_A_oDuL-14HraMHWZasS1-Acnw")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8599650881:AAH8ntxRQo6EMoIC0ewl-VsgbeuDFjiDmd0")
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://vabenix546_db_user:JiBKbhvSUF6RziWO@cluster0.hlq6wml.mongodb.net/?appName=Cluster0")
 
 CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1001819373091"))
@@ -322,7 +325,7 @@ def manage_files():
         return jsonify({"status": "deleted"})
 
 # ===========================
-# 🤖 BOT LOGIC
+# 🤖 BOT LOGIC (SAFE EDIT FIX)
 # ===========================
 async def get_keyboard(option_type, parent=None, semester=None):
     query = {"type": option_type}
@@ -385,31 +388,38 @@ async def handle_text(client, message):
         state["data"]["subject"] = text
         status_msg = await message.reply("☁️ **Processing File...**", reply_markup=ReplyKeyboardRemove())
         
+        # 🛡️ SAFE EDIT HELPER: Prevents crashing if edit fails
+        async def safe_edit(text):
+            try:
+                await status_msg.edit_text(text)
+            except Exception as e:
+                print(f"⚠️ Status Update Ignored: {e}")
+
         try:
-            # 1. Download
-            await status_msg.edit_text("⬇️ **Downloading...**")
+            # 1. Download from Telegram
+            await safe_edit("⬇️ **Downloading...**")
             file_path = await state["file_msg"].download()
             final_path = file_path
             
-            # 2. Watermark
+            # 2. Add Watermark if PDF
             if file_path.lower().endswith(".pdf"):
                 try:
-                    await status_msg.edit_text("🖼 **Adding Watermark...**")
+                    await safe_edit("🖼 **Adding Watermark...**")
                     output_path = "watermarked_" + os.path.basename(file_path)
                     await asyncio.to_thread(add_watermark_page, file_path, output_path, "NoteHub", WEBSITE_LINK)
                     final_path = output_path
                 except Exception as wm_error:
                     print(f"Watermark Error (Skipping): {wm_error}")
             
-            # 3. Drive Upload
+            # 3. Upload to Google Drive
             if not DRIVE_FOLDER_ID:
-                await status_msg.edit_text("❌ Error: Drive Folder ID not configured!")
+                await safe_edit("❌ Error: Drive Folder ID not configured!")
                 return
 
-            await status_msg.edit_text("🚀 **Uploading to Drive...**")
+            await safe_edit("🚀 **Uploading to Drive...**")
             file_id, drive_link = await asyncio.to_thread(upload_to_drive, final_path, state["data"]["name"], DRIVE_FOLDER_ID)
             
-            # 4. Save DB
+            # 4. Save to Database
             file_data = {
                 "name": state["data"]["name"],
                 "category": state["data"]["category"],
@@ -425,14 +435,19 @@ async def handle_text(client, message):
             if os.path.exists(file_path): os.remove(file_path)
             if os.path.exists(final_path) and final_path != file_path: os.remove(final_path)
             
+            space_info = await asyncio.to_thread(get_storage_info)
+            
             await status_msg.delete() 
             await message.reply(
-                f"✅ **Uploaded Successfully!**\n\n"
+                f"✅ **File Published!**\n\n"
                 f"📄 {file_data['name']}\n"
-                f"🔗 [Open in Drive]({drive_link})"
+                f"🔗 [Open in Drive]({drive_link})\n"
+                f"💾 Storage: {space_info}"
             )
             
         except Exception as e:
+            # Print full error trace to logs so we can debug properly
+            traceback.print_exc()
             await message.reply(f"❌ Error: {e}")
             if 'file_path' in locals() and os.path.exists(file_path): os.remove(file_path)
         
@@ -448,11 +463,20 @@ def run_flask():
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
     print("🤖 Starting Bot...")
-    bot.start()
+    try:
+        bot.start()
+        print("✅ Bot Started!")
+    except FloodWait as e:
+        print(f"❌ FLOOD WAIT: {e.value} seconds. SWITCH TO A NEW BOT TOKEN TO FIX THIS.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Start Error: {e}")
+    
     try:
         print(f"🔄 Caching Channel ID: {CHANNEL_ID}...")
         bot.loop.run_until_complete(bot.get_chat(CHANNEL_ID))
     except Exception as e: print(f"⚠️ Cache Warning: {e}")
+    
     print("🚀 System Online!")
     idle()
     bot.stop()
