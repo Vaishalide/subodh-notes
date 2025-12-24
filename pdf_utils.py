@@ -8,7 +8,7 @@ from reportlab.lib.colors import blue, black, darkgray
 from pypdf import PdfReader, PdfWriter
 
 # Define the logo filename expected in the root directory
-LOGO_FILENAME = "logo.png"
+LOGO_FILENAME = "logo.jpg"
 
 def add_watermark_page(input_path, output_path, website_name="NoteHub", website_link="https://your-website.com"):
     watermark_file = "watermark_temp.pdf"
