@@ -33,7 +33,7 @@ except ImportError:
 # ===========================
 API_ID = int(os.environ.get("API_ID", "26233871"))
 API_HASH = os.environ.get("API_HASH", "d1274875c02026a781bbc19d12daa8b6")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8599650881:AAH8ntxRQo6EMoIC0ewl-VsgbeuDFjiDmd0")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8411335287:AAFTEW7Ah_A_oDuL-14HraMHWZasS1-Acnw")
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://vabenix546_db_user:JiBKbhvSUF6RziWO@cluster0.hlq6wml.mongodb.net/?appName=Cluster0")
 
 CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1001819373091"))
