@@ -21,7 +21,7 @@ from pyrogram import Client, filters, idle
 from pyrogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
 from pymongo import MongoClient
 
-# Custom Modules (Make sure you have drive_utils.py and pdf_utils.py files created)
+# Custom Modules
 try:
     from drive_utils import upload_to_drive, get_storage_info
     from pdf_utils import add_watermark_page
@@ -32,17 +32,15 @@ except ImportError:
 # ⚙️ CONFIGURATION
 # ===========================
 API_ID = int(os.environ.get("API_ID", "26233871"))
-# FIXED: Removed extra ')' at the end of these lines
 API_HASH = os.environ.get("API_HASH", "d1274875c02026a781bbc19d12daa8b6")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8599650881:AAH8ntxRQo6EMoIC0ewl-VsgbeuDFjiDmd0")
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://vabenix546_db_user:JiBKbhvSUF6RziWO@cluster0.hlq6wml.mongodb.net/?appName=Cluster0")
 
 CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1001819373091"))
-# You must set DRIVE_FOLDER_ID in Heroku Config Vars
-DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "1a1xa5eAS5ZDVl7adiD5ZwxPbptJTBxcR") 
+DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "") 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASS", "admin123")
 SECRET_KEY = "super_secret_key_change_this"
-WEBSITE_LINK = "https://subodhpgcollege.site" 
+WEBSITE_LINK = "https://subodhnotes-10fc50a27a91.herokuapp.com" 
 
 # ===========================
 # 🗄️ DATABASE
@@ -261,7 +259,7 @@ def get_notices():
         print(f"Scraping Error: {e}")
         return jsonify([])
 
-# --- 🚀 NEW DOWNLOAD ROUTE (Redirect to Drive) ---
+# --- DOWNLOAD ROUTE ---
 @app.route('/download/<file_id>')
 def download_file(file_id):
     file_doc = files_col.find_one({"file_id": file_id})
@@ -324,7 +322,7 @@ def manage_files():
         return jsonify({"status": "deleted"})
 
 # ===========================
-# 🤖 BOT LOGIC (Google Drive Upload)
+# 🤖 BOT LOGIC
 # ===========================
 async def get_keyboard(option_type, parent=None, semester=None):
     query = {"type": option_type}
@@ -385,60 +383,57 @@ async def handle_text(client, message):
         await message.reply("📚 **Select Subject:**", reply_markup=kb)
     elif step == "ASK_SUB":
         state["data"]["subject"] = text
-        status_msg = await message.reply("☁️ **Downloading & Processing...**", reply_markup=ReplyKeyboardRemove())
+        status_msg = await message.reply("☁️ **Processing File...**", reply_markup=ReplyKeyboardRemove())
         
         try:
-            # 1. Download from Telegram
+            # 1. Download
+            await status_msg.edit_text("⬇️ **Downloading...**")
             file_path = await state["file_msg"].download()
             final_path = file_path
             
-            # 2. Add Watermark if PDF
+            # 2. Watermark
             if file_path.lower().endswith(".pdf"):
                 try:
                     await status_msg.edit_text("🖼 **Adding Watermark...**")
                     output_path = "watermarked_" + os.path.basename(file_path)
                     await asyncio.to_thread(add_watermark_page, file_path, output_path, "NoteHub", WEBSITE_LINK)
                     final_path = output_path
-                except Exception as e:
-                    print(f"Watermark Error: {e}")
+                except Exception as wm_error:
+                    print(f"Watermark Error (Skipping): {wm_error}")
             
-            # 3. Upload to Google Drive
+            # 3. Drive Upload
             if not DRIVE_FOLDER_ID:
-                await status_msg.edit_text("❌ Error: Drive Folder ID not set in Heroku!")
+                await status_msg.edit_text("❌ Error: Drive Folder ID not configured!")
                 return
 
-            await status_msg.edit_text("🚀 **Uploading to Google Drive...**")
+            await status_msg.edit_text("🚀 **Uploading to Drive...**")
             file_id, drive_link = await asyncio.to_thread(upload_to_drive, final_path, state["data"]["name"], DRIVE_FOLDER_ID)
             
-            # 4. Save to Database
+            # 4. Save DB
             file_data = {
                 "name": state["data"]["name"],
                 "category": state["data"]["category"],
                 "course": state["data"]["course"],
                 "semester": state["data"]["semester"],
                 "subject": state["data"]["subject"],
-                "file_id": file_id,   # Drive ID
+                "file_id": file_id,
                 "drive_link": drive_link 
             }
             files_col.insert_one(file_data)
             
-            # 5. Cleanup & Space
+            # 5. Cleanup
             if os.path.exists(file_path): os.remove(file_path)
             if os.path.exists(final_path) and final_path != file_path: os.remove(final_path)
-            
-            space_info = await asyncio.to_thread(get_storage_info)
             
             await status_msg.delete() 
             await message.reply(
                 f"✅ **Uploaded Successfully!**\n\n"
                 f"📄 {file_data['name']}\n"
-                f"🔗 [Open in Drive]({drive_link})\n"
-                f"💾 Drive Space: {space_info}"
+                f"🔗 [Open in Drive]({drive_link})"
             )
             
         except Exception as e:
             await message.reply(f"❌ Error: {e}")
-            # Cleanup
             if 'file_path' in locals() and os.path.exists(file_path): os.remove(file_path)
         
         del user_states[user_id]
