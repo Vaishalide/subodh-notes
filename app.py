@@ -42,7 +42,7 @@ CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1001819373091"))
 DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "1a1xa5eAS5ZDVl7adiD5ZwxPbptJTBxcR") 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASS", "admin123")
 SECRET_KEY = "super_secret_key_change_this"
-WEBSITE_LINK = "https://subodhnotes-10fc50a27a91.herokuapp.com" 
+WEBSITE_LINK = "https://subodhpgcollege.site" 
 
 # ===========================
 # 🗄️ DATABASE
