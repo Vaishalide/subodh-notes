@@ -39,7 +39,7 @@ MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://vabenix546_db_user:JiBKbh
 
 CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1001819373091"))
 # You must set DRIVE_FOLDER_ID in Heroku Config Vars
-DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "") 
+DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "1a1xa5eAS5ZDVl7adiD5ZwxPbptJTBxcR") 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASS", "admin123")
 SECRET_KEY = "super_secret_key_change_this"
 WEBSITE_LINK = "https://subodhnotes-10fc50a27a91.herokuapp.com" 
