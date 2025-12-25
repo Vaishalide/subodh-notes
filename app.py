@@ -103,8 +103,16 @@ def home():
 # 🆕 ADD THIS NEW ROUTE HERE:
 @app.route('/logo.jpg')
 def serve_logo():
-    if os.path.exists("logo.jpg"):
-        return send_file("logo.jpg")
+    # Get the absolute path of the folder where app.py is located
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    # Join it with the filename
+    file_path = os.path.join(root_dir, 'logo.jpg')
+
+    if os.path.exists(file_path):
+        return send_file(file_path)
+    
+    # Helpful error message for logs
+    print(f"❌ Error: Could not find logo at {file_path}") 
     return "Logo not found", 404
 
 @app.route('/api/public/options', methods=['GET'])
