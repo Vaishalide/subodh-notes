@@ -100,6 +100,13 @@ def compress_response(response):
 def home():
     return render_template('index.html')
 
+# 🆕 ADD THIS NEW ROUTE HERE:
+@app.route('/logo.jpg')
+def serve_logo():
+    if os.path.exists("logo.jpg"):
+        return send_file("logo.jpg")
+    return "Logo not found", 404
+
 @app.route('/api/public/options', methods=['GET'])
 def get_public_options():
     cached = get_cached_data('db_options')
